@@ -1,0 +1,16 @@
+
+^
+$
+^  0
+^ TALK_N 0 TALK_V 0
+TALK_V talk 0
+TALK_V TENSE 0
+TALK_N talk 0
+TALK_N PLUR 0
+PLUR  0 s 0
+PLUR $ 0
+TENSE  0 s 0 ed 0
+TENSE $ 0
+
+$ talk v: talk (), talks (sg3), talked (past)
+$ talk n: talk (sg), talks (pl)
