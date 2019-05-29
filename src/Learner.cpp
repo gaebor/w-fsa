@@ -317,7 +317,7 @@ void Learner::BuildStructureMtx(const Fsa& fsa, const Corpus& corpus, bool bfs)
             if (!has_path)
             {   // word was not recognized
                 ++auxiliary_parameters;
-                aux_hessian -= log(wordIt->second);
+                aux_hessian -= std::log(wordIt->second);
             }
         }
     });
@@ -433,7 +433,7 @@ double Learner::GetTotalModeledProb() const
 
 double Learner::gKLDistance() const
 {
-    return GetKLDistance() - common_support * log(common_support);
+    return GetKLDistance() - common_support * std::log(common_support);
 }
 
 void Learner::Init(int flags, const double* initialx)

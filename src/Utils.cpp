@@ -219,7 +219,7 @@ bool ContainsPrefix(const CStr& word, const CStr& prefix)
 double LogSimplexVolume(size_t d)
 {
     if (d > 0)
-        return 0.5*log(d) - LogFactorial(d - 1);
+        return 0.5*std::log(d) - LogFactorial(d - 1);
     else
         return 0;
 }
@@ -241,7 +241,7 @@ double LogFactorial(size_t d)
         memory.reserve(d + 1);
         for (auto i = memory.size(); i <= d; ++i)
         {
-            result += log(i);
+            result += std::log(i);
             memory.emplace_back(result);
         }
         return result;

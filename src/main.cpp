@@ -27,13 +27,15 @@ int main(int argc, const char* argv[])
     int recognize = 1;
     bool initx = false;
     double tolerance = 1e-6;
-    int threads = 1;
+    // int threads = 1;
+    const int max_threads = mkl_get_max_threads();
+    size_t test_n = 0, test_t = 0;
 
-    if (mkl_set_interface_layer(MKL_INTERFACE_ILP64) == -1)
-    {
-        std::cerr << "Unable to specify ILP64 interface layer!" << std::endl;
-        return 1;
-    }
+    //if (mkl_set_interface_layer(MKL_INTERFACE_ILP64) == -1)
+    //{
+    //    std::cerr << "Unable to specify ILP64 interface layer!" << std::endl;
+    //    return 1;
+    //}
 
     {
         MKLVersion Version;
@@ -41,20 +43,25 @@ int main(int argc, const char* argv[])
         std::ostringstream oss;
         oss << "\n --- Put the W in FSA --- \n\n"
             "Learning weights of a finite state automaton\n"
-            "Author: Gabor Borbely, contact: borbely@math.bme.hu\n\n" <<
+            "Author: Gabor Borbely, Contact: borbely@math.bme.hu, License: MIT\n\n" <<
             "Using Intel(R) Math Kernel Library Version " << Version.MajorVersion <<
             '.' << Version.MinorVersion << '.' << Version.UpdateVersion <<
             ' ' << Version.ProductStatus << " Build " << Version.Build <<
-            "\nfor " << Version.Processor << "\n\n" <<
+            "\nfor " << Version.Processor << "\n";
+        if (max_threads == 1)
+            oss << "Only 1 thread";
+        else
+            oss << "Maximum " << max_threads << " threads";
+        oss << " supported!\n\n"
             "Environment variables to control MKL:\n"
             "MKL_THREADING_LAYER=[INTEL|GNU|TBB|SEQUENTIAL]\n"
             "MKL_NUM_THREADS=int\n"
             "MKL_VML_MODE=[VML_HA|VML_LA|VML_EP] meaning 'high accuracy', 'low accuracy' and 'enhanced performance' respectively";
 
-        arg::Parser<> parser(oss.str(), { "-h", "--help" });
+        arg::Parser<> parser(oss.str(), { "-h", "--help" }, "", 80, true);
 
-        parser.AddArg(corpus_filename, { "-c", "--corpus" }, "corpus to load", "string");
-        parser.AddArg(automaton_filename, { "-a", "--automaton", "--load" }, "FSA to load", "string");
+        parser.AddArg(corpus_filename, { "-c", "--corpus" }, "corpus to load");
+        parser.AddArg(automaton_filename, { "-a", "--automaton", "--load" }, "FSA to load");
         parser.AddArg(epochs, { "-e", "--epoch", "--epochs" }, "number of maximum optimization epochs");
         parser.AddArg(eta, { "-l", "--learning", "--eta" }, "learning rate");
         parser.AddArg(tolerance, { "-tol", "--tol", "--tolerance" }, "tolerance when to stop");
@@ -62,26 +69,43 @@ int main(int argc, const char* argv[])
         parser.AddFlag(normalize, { "-n", "--normalize" }, "normalize the automaton after optimization");
         parser.AddFlag(print, { "-p", "--print" }, "prints extra info to stderr");
         parser.AddFlag(suppress, { "-s", "--suppress" }, "suppresses printing of learned FSA to stdout");
-        parser.AddArg(threads, { "-t", "--thread", "--threads" }, "sets the number of MKL threads,\nif not set or zero then leave it to the environment variable");
+        // parser.AddArg(threads, { "-t", "--thread", "--threads" }, "sets the number of MKL threads,\nif not set or zero then leave it to the environment variable");
         parser.AddArg(recognize, { "-r", "--recognize" }, "recognize algorithm, 0: Breadth-first search, 1: Depth-first search", "", { 0, 1 });
         parser.AddArg(matrices_filename, { "-m", "--matrices", "--matrix" }, "name for matrix files\n"
             "If filename starts with \"<\" then loads, if \">\" then saves.\n"
-            "loading from matrix files implies uniform initialization, unless initial x vector is provided with \"-x\"",
-            "string");
-        parser.AddArg(initx, { "-x", "--initx", "--initial" }, "if set, reads initial x vector from stdin");
+            "loading from matrix files implies uniform initialization, unless initial x vector is provided with \"-x\"");
+        parser.AddFlag(initx, { "-x", "--initx", "--initial" }, "if set, reads initial x vector from stdin");
         parser.AddArg(initflags, { "-i", "--init" }, "bitfield to control initialization before optimization\n"
             "1: make weights total uniform\n"
             "2: normalize automaton\n"
             "4: initialize Lagrange multipliers\n"
             "8: use Hessian of objective, otherwise use only Hessian of constraints\n"
-            "16: computes a permutation that minimizes the fill-in during the factorization phase"
+            "16: computes a permutation that minimizes the fill-in during the factorization phase\n"
+        );
+        parser.AddArg(test_n, { "-testn", "-test_n", "--testn", "--test_n" }, "bitfield which vector sizes to test, calculated in powers of 10:\n"
+            "0: no tests, 1: 1, 2: 10, 4: 100, 2^n -> 10^n \n"
+            "for the tests the '--epoch' argument is used to specify the number of repetitions."
+        );
+        parser.AddArg(test_t, { "-testt", "-test_t", "--testt", "--test_t" }, "bitfield for which tests to run\n"
+            "if positive, then performs the tests and exits.\n"
+            "1\tstd::exp\n"
+            "2\tvdExp\n"
+            "4\tstd::accumulate\n"
+            "8\tcblas_ddot with ones vector\n"
+            "16\tstd::fill with zeros\n"
+            "32\tcblas_dscal with zero"
         );
 
         parser.Do(argc, argv);
     }
-    if (threads > 0)
+    //if (threads > 0)
+    //{
+    //    mkl_set_num_threads(threads);
+    //}
+    if (test_t > 0)
     {
-        mkl_set_num_threads(threads);
+        test(std::cout, epochs, test_n, test_t);
+        return 0;
     }
     try {
 
@@ -264,7 +288,7 @@ int main(int argc, const char* argv[])
         std::cerr.precision(DBL_DIG);
         std::cerr << "Result:" <<
             ' ' << learner.GetKLDistance() <<
-            ' ' << -learner.GetCommonSupport()*log(learner.GetCommonSupport()) <<
+            ' ' << -learner.GetCommonSupport()*std::log(learner.GetCommonSupport()) <<
             ' ' << learner.LogModelVolume() <<
             ' ' << learner.LogAuxiliaryVolume() <<
             ' ' << logdetHessian <<

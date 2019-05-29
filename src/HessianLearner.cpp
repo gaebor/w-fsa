@@ -549,8 +549,8 @@ double HessianLearner::CalculateLogDetH(bool reorder)
         double result = 0;
         for (size_t i = 0; i < GetNumberOfParameters(); ++i)
         {
-            if (H[i] > 0.0)
-                result += log(H[i]);
+            if (H[i] > 0)
+                result += std::log(H[i]);
             else
                 return atof("inf");
         }
@@ -604,7 +604,7 @@ double HessianLearner::CalculateLogDetH(bool reorder)
             const double& det_pow = det[0], &det_base = det[1];
             if (det_base <= 0.0)
                 return atof("inf");
-            return log(det_base) + det_pow * M_LN10;
+            return std::log(det_base) + det_pow * M_LN10;
         }
     }
 }

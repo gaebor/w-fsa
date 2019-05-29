@@ -8,31 +8,44 @@
 #include <cmath>
 #include <numeric>
 
+//! simple class to measure time, not thread safe!
+/*! from https://github.com/gaebor/AsyncQueue
+*/
+template<class ClockTy = std::chrono::steady_clock>
 class Clock
 {
 public:
+    //! marks instantiation time
     Clock()
     {
         Tick();
     }
-    ~Clock() {}
-    double Tack() const
-    {
-        return std::chrono::duration_cast<nsec>(clk.now() - timepoint).count() / (1000000000.0);
-    }
+    //! marks current time
     void Tick()
     {
-        timepoint = clk.now();
+        _timePoint = MyClock::now();
     }
+    //! returns time between former time mark and now
+    /*!
+    @return time since last Tick, construction.
+    */
+    double Tack()
+    {
+        auto const now = MyClock::now();
+        const auto elapsed = _frequency * (now - _timePoint).count();
+        return elapsed;
+    }
+    ~Clock() {}
 private:
-    std::chrono::high_resolution_clock clk;
-    typedef std::chrono::nanoseconds nsec;
-    std::chrono::time_point<decltype(clk)> timepoint;
+    typedef ClockTy MyClock;
+    typedef typename MyClock::duration MyDuration;
+    typename MyClock::time_point _timePoint;
+    static constexpr double _frequency = (double)MyDuration::period::num / MyDuration::period::den;
 };
 
 void test(std::ostream& os, size_t epoch, size_t nn, size_t tests)
 {
-    Clock clock;
+    Clock<> clock;
     std::vector<double> out, x;
 
     os << "n" <<
@@ -63,7 +76,7 @@ void test(std::ostream& os, size_t epoch, size_t nn, size_t tests)
             clock.Tick();
             for (size_t e = 0; e < epoch; ++e)
                 for (MKL_INT i = 0; i < n; ++i)
-                    out[i] = exp(x[i]);
+                    out[i] = std::exp(x[i]);
 
             os << (clock.Tack() / epoch) << '\t';
             os.flush();
