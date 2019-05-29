@@ -96,8 +96,6 @@ void HessianLearner::OptimizationStep(double eta)
     if (!unique_path && include_Hf)
         ComputeHf();
 
-    //TODO determinant of H_f
-
     ComputeHg();
     
     // sol = H \ rhs
@@ -223,9 +221,25 @@ double HessianLearner::ComputeLogDetHessian()
     cblas_dscal(H.size(), 0, H.data(), 1);
     
     // fill in the values, similar to Hf
-
     ComputeExpX(); // these are the actual variables of the current Hessian
+    auto& x = expx;
+    if (true)
+    {
+        ComputeGrad();
 
+        ComputeHf();
+
+        for (MKL_INT j = 0; j < n; ++j)
+        {
+            MKL_INT k = Hrow[j];
+            H[k] -= rhs[j];
+            for (; k < Hrow[j + 1]; ++k)
+            {
+                H[k] /= x[j] * x[Hcol[k]];
+            }
+        }
+    }else
+    {
     static std::vector<std::pair<MKL_INT, double>> grad_qi;
     static std::vector<std::pair<std::pair<MKL_INT, MKL_INT>, double>> Hqijk;
     
@@ -239,7 +253,7 @@ double HessianLearner::ComputeLogDetHessian()
             {   // variables in the one and only path
                 // p_i * #(x_j in path of p_i) / x_j^2
                 
-                GetCoord(Hrow, Hcol, H, Pcol[rj], Pcol[rj]) += p[str_idx] * Pdata[rj] / (expx[Pcol[rj]] * expx[Pcol[rj]]);
+                GetCoord(Hrow, Hcol, H, Pcol[rj], Pcol[rj]) += p[str_idx] * Pdata[rj] / (x[Pcol[rj]] * x[Pcol[rj]]);
             }
         }
         else
@@ -256,15 +270,15 @@ double HessianLearner::ComputeLogDetHessian()
                 {   // variables in the path
 
                     // #(x_j in path of p_i) / x_j^2
-                    SortedInsert(Hqijk, std::make_pair(Pcol[rj], Pcol[rj])) += Pdata[rj] / (expx[Pcol[rj]] * expx[Pcol[rj]]);
+                    SortedInsert(Hqijk, std::make_pair(Pcol[rj], Pcol[rj])) += Pdata[rj] / (x[Pcol[rj]] * x[Pcol[rj]]);
 
                     // path_prob * #{x_j in path} / exp(x_j)
-                    SortedInsert(grad_qi, Pcol[rj]) += (path_prob / expx[Pcol[rj]]) * Pdata[rj];
+                    SortedInsert(grad_qi, Pcol[rj]) += (path_prob / x[Pcol[rj]]) * Pdata[rj];
 
                     for (auto rk = rj; rk < Prow[path_idx + 1]; ++rk)
                     {
                         // #{x_j in path}/exp(x_j) * #{x_k in path}/exp(x_k)
-                        SortedInsert(Hqijk, std::make_pair(Pcol[rj], Pcol[rk])) -= (Pdata[rj] / expx[Pcol[rj]]) * (Pdata[rk] / expx[Pcol[rk]]);
+                        SortedInsert(Hqijk, std::make_pair(Pcol[rj], Pcol[rk])) -= (Pdata[rj] / x[Pcol[rj]]) * (Pdata[rk] / x[Pcol[rk]]);
                     }
                 }
                 cblas_dscal(Hqijk.size(), piqi * path_prob, &Hqijk.front().second, 3);
@@ -286,6 +300,7 @@ double HessianLearner::ComputeLogDetHessian()
                 }
             }
         }
+    }
     }
     return CalculateLogDetH(false);
 }
