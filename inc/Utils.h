@@ -191,9 +191,9 @@ double mxlogx(double x);
 template<typename Key, typename Value, typename Allocator>
 Value& SortedInsert(std::vector<std::pair<Key, Value>, Allocator>& vec, const Key& key)
 {
-    static std::pair<Key, Value> pair;
+    std::pair<Key, Value> pair;
     pair.first = key;
-    auto where = std::upper_bound(vec.begin(), vec.end(), pair, Lesser<Key, Value>());
+    auto where = std::lower_bound(vec.begin(), vec.end(), pair, Lesser<Key, Value>());
     if (where == vec.end() || where->first != key)
         return vec.emplace(where, pair)->second;
     else
