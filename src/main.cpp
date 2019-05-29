@@ -192,7 +192,7 @@ int main(int argc, const char* argv[])
             "\n\tunique paths: " << (learner.HasUniquePaths() ? "true" : "false") <<
             std::endl;
     }
-    
+
     if (print)
     {
         learner.PrintC(std::cerr << "C:\n");
@@ -288,7 +288,7 @@ int main(int argc, const char* argv[])
         std::cerr.precision(DBL_DIG);
         std::cerr << "Result:" <<
             ' ' << learner.GetKLDistance() <<
-            ' ' << -learner.GetCommonSupport()*std::log(learner.GetCommonSupport()) <<
+            ' ' << mxlogx(learner.GetCommonSupport()) <<
             ' ' << learner.LogModelVolume() <<
             ' ' << learner.LogAuxiliaryVolume() <<
             ' ' << logdetHessian <<

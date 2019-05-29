@@ -185,6 +185,8 @@ struct Lesser
     }
 };
 
+double mxlogx(double x);
+
 //! kind-of a vector implementation of map
 template<typename Key, typename Value, typename Allocator>
 Value& SortedInsert(std::vector<std::pair<Key, Value>, Allocator>& vec, const Key& key)

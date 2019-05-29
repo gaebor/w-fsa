@@ -229,6 +229,16 @@ struct LogFactorialMemory : std::vector<double>
     LogFactorialMemory() : std::vector<double>(2, 0) {}
 };
 
+double mxlogx(double x)
+{
+    if (x > 0)
+        return x * (-std::log(x));
+    else if (x == 0)
+        return 0;
+    else
+        return atof("inf");
+}
+
 double LogFactorial(size_t d)
 {
     static LogFactorialMemory memory;

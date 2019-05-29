@@ -419,7 +419,7 @@ size_t Learner::GetNumberOfStrings() const
 
 size_t Learner::GetNumberOfPaths() const { return Mcol.size(); }
 size_t Learner::GetNumberOfParameters() const { return Ccol.size(); }
-size_t Learner::GetNumberOfConstraints() const { return Ccol.back() + 1; }
+size_t Learner::GetNumberOfConstraints() const { return Ccol.empty() ? 0 : Ccol.back() + 1; }
 
 double Learner::GetCommonSupport() const
 {
