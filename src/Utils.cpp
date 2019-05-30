@@ -3,6 +3,10 @@
 #include <algorithm>
 #include <vector>
 
+#include "mkl_dss.h"
+#define _USE_MATH_DEFINES 
+#include <math.h>
+
 bool matches(const char * str, const char * pattern1)
 {
     return (strcmp(pattern1, str) == 0);
@@ -289,4 +293,92 @@ size_t StrHash::operator()(const CStr& s) const
         result *= FNV::prime;
     }
     return result;
+}
+
+double RealSymmetricLogDet(const MKL_INT* const Hrow, const MKL_INT n,
+                       const MKL_INT* const Hcol, const MKL_INT nnz,
+                       const double* const Hdata, bool reorder)
+{
+    if (n == nnz)
+    {
+        double result = 0;
+        for (MKL_INT i = 0; i < n; ++i)
+        {
+            if (Hdata[i] > 0)
+                result += std::log(Hdata[i]);
+            else
+                return atof("inf");
+        }
+        return result;
+    }
+    std::vector<MKL_INT> perm;
+    MKL_INT solver_opt = MKL_DSS_ZERO_BASED_INDEXING +
+        MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR +
+        MKL_DSS_REFINEMENT_ON;
+    
+    MKL_INT error;
+    DssSolverHandler solver(solver_opt);
+    auto solver_handle = solver.GetHandler();
+    
+    solver_opt = MKL_DSS_SYMMETRIC;
+    if ((error = dss_define_structure(solver_handle, solver_opt, Hrow, n, n, Hcol, nnz)) != MKL_DSS_SUCCESS)
+    {
+        throw MyError("Unable to define structure for RealSymmetricLogDet! Error code: ", error);
+    }
+    solver_opt = reorder ? MKL_DSS_GET_ORDER : MKL_DSS_MY_ORDER;
+    perm.resize(n);
+    if (!reorder)
+    {   // stick to original order
+        for (MKL_INT i = 0; i < n; ++i)
+            perm[i] = i;
+    }
+    if ((error = dss_reorder(solver_handle, solver_opt, perm.data())) != MKL_DSS_SUCCESS)
+    {
+        throw MyError("Unable to find reorder for RealSymmetricLogDet! Error code: ", error);
+    }
+    solver_opt = MKL_DSS_INDEFINITE;
+    if ((error = dss_factor_real(solver_handle, solver_opt, Hdata)) != MKL_DSS_SUCCESS)
+    {
+        throw MyError("Unable to factor for RealSymmetricLogDet! Error code: ", error);
+    }
+    solver_opt = MKL_DSS_DEFAULTS;
+    double det[2];
+    if ((error = dss_statistics(solver_handle, solver_opt, "Determinant", det)) != MKL_DSS_SUCCESS)
+    {
+        throw MyError("Unable to get determinant for RealSymmetricLogDet! Error code: ", error);
+    }
+    else
+    {
+        const double& det_pow = det[0], &det_base = det[1];
+        if (det_base <= 0.0)
+            return atof("inf");
+        return std::log(det_base) + det_pow * M_LN10;
+    }
+}
+
+DssSolverHandler::DssSolverHandler(MKL_INT solver_opt)
+    : solver_handler(NULL)
+{
+    MKL_INT error;
+    if ((error = dss_create(solver_handler, solver_opt)) != MKL_DSS_SUCCESS)
+    {
+        throw MyError("Failed to create DSS! Error code: ", error);
+    }
+}
+
+DssSolverHandler::~DssSolverHandler()
+{
+    if (solver_handler)
+    {
+        MKL_INT solver_opt = MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR;
+        dss_delete(solver_handler, solver_opt);
+        //if (error != MKL_DSS_SUCCESS)
+        //    throw MyError("Cannot delete solver! Error: ", error);
+        solver_handler = 0;
+    }
+}
+
+void* DssSolverHandler::GetHandler() const
+{
+    return solver_handler;
 }

@@ -284,6 +284,8 @@ int main(int argc, const char* argv[])
             "\n\tfill: " << learner.GetHessianFillRatio() << std::endl;
         if (print)
             learner.PrintH(std::cerr);
+        
+        // TODO: original + aux model parameters
 
         std::cerr.precision(DBL_DIG);
         std::cerr << "Result:" <<

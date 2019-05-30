@@ -28,8 +28,6 @@ public:
     HessianLearner(const Fsa& fsa);
     HessianLearner(const std::string& filename);
 
-    HessianLearner(const HessianLearner& other);
-
     virtual ~HessianLearner();
 
     //! fills _x[n:]
@@ -156,12 +154,10 @@ private:
     //! rhs[n:] <- C^t.exp(x) - 1
     void ComputeG();
 
-    void DeleteSolver();
-    double CalculateLogDetH(bool reorder);
     std::vector<double> rhs, H, expx, jgl, delta_x;
     std::vector<MKL_INT> Hrow, Hcol;
     std::vector<MKL_INT> perm;
-    _MKL_DSS_HANDLE_t solver_handle;
+    DssSolverHandler solver;
     MKL_INT solver_opt;
     bool include_Hf;
 };

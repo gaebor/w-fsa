@@ -166,14 +166,14 @@ void ProgressIndicator(T begin, T* p, F factor, const char* fmt,
 }
 
 //! kind-of a vector implementation of set
-template<typename Ty, typename Allocator>
-typename std::vector<Ty, Allocator>::iterator SortedInsert(std::vector<Ty, Allocator>& vec, const Ty& value)
+template<typename Value, typename Allocator>
+Value& SortedInsert(std::vector<Value, Allocator>& vec, const Value& value)
 {
-    auto where = std::upper_bound(vec.begin(), vec.end(), value);
+    auto where = std::lower_bound(vec.begin(), vec.end(), value);
     if (where == vec.end() || *where != value)
-        return vec.insert(where, value);
+        return *vec.emplace(where, value);
     else
-        return where;
+        return *where;
 }
 
 template<typename Ty1, typename Ty2>
@@ -206,3 +206,18 @@ Value& GetCoord(const std::vector<MKL_INT>& rows, std::vector<MKL_INT>& cols, st
     auto where = std::lower_bound(cols.data() + rows[i], cols.data() + rows[i + 1], j);
     return data[where - cols.data()];
 }
+
+struct DssSolverHandler
+{
+    DssSolverHandler(MKL_INT solver_opt);
+    ~DssSolverHandler();
+    void* GetHandler()const;
+private:
+    void* solver_handler;
+};
+
+double RealSymmetricLogDet(const MKL_INT* const Hrow, const MKL_INT n,
+                       const MKL_INT* const Hcol, const MKL_INT nnz,
+                       const double* const Hdata, bool reorder=false);
+
+void Dok2Csr();

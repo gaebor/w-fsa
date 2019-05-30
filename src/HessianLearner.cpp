@@ -1,43 +1,31 @@
 #include "HessianLearner.h"
 
 #include "mkl.h"
-
-#define _USE_MATH_DEFINES 
-#include <math.h>
+#include "Utils.h"
 
 #include <unordered_set>
 #include <algorithm>
 #include <iterator>
 
 HessianLearner::HessianLearner()
-    : Learner(), solver_handle(0), include_Hf(false)
+    : Learner(), solver(MKL_DSS_ZERO_BASED_INDEXING +
+        MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR + MKL_DSS_REFINEMENT_ON),
+        include_Hf(false)
 {
 }
 
 HessianLearner::HessianLearner(const Fsa & fsa)
-:   Learner(fsa), solver_handle(nullptr), include_Hf(false)
+:   Learner(fsa), solver(MKL_DSS_ZERO_BASED_INDEXING +
+        MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR + MKL_DSS_REFINEMENT_ON),
+        include_Hf(false)
 {
 }
 
 HessianLearner::HessianLearner(const std::string & filename)
-    : Learner(filename), solver_handle(nullptr), include_Hf(false)
+    : Learner(filename), solver(MKL_DSS_ZERO_BASED_INDEXING +
+        MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR + MKL_DSS_REFINEMENT_ON),
+        include_Hf(false)
 {
-}
-
-HessianLearner::HessianLearner(const HessianLearner & other)
-    : Learner(other), solver_handle(0)
-{
-    rhs = other.rhs;
-    H = other.H;
-    expx = other.expx;
-    jgl = other.jgl;
-    delta_x = other.delta_x;
-
-    Hrow = other.Hrow; Hcol = other.Hcol;
-    perm = other.perm;
-
-    solver_opt = other.solver_opt;
-    include_Hf = other.include_Hf;
 }
 
 void HessianLearner::BuildPathsCallback()
@@ -51,18 +39,12 @@ void HessianLearner::BuildPathsCallback()
 
 void HessianLearner::InitDss(bool reorder)
 {
-    solver_opt = MKL_DSS_ZERO_BASED_INDEXING +
-        MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR +
-        MKL_DSS_REFINEMENT_ON;
-    
-    MKL_INT error;
-    if ((error = dss_create(solver_handle, solver_opt)) != MKL_DSS_SUCCESS)
-    {
-        throw LearnerError("Failed to create DSS! Error code: ", error);
-    }
     const MKL_INT rows = GetNumberOfAugmentedParameters();
     const MKL_INT cols = GetNumberOfAugmentedParameters(), nnz = H.size();
+    MKL_INT error;
     solver_opt = MKL_DSS_SYMMETRIC;
+    auto solver_handle = solver.GetHandler();
+
     if ((error = dss_define_structure(solver_handle, solver_opt, Hrow.data(), rows, cols, Hcol.data(), nnz)) != MKL_DSS_SUCCESS)
     {
         throw LearnerError("Unable to define structure! Error code: ", error);
@@ -82,7 +64,6 @@ void HessianLearner::InitDss(bool reorder)
 
 HessianLearner::~HessianLearner()
 {
-    DeleteSolver();
 }
 
 void HessianLearner::OptimizationStep(double eta)
@@ -101,6 +82,7 @@ void HessianLearner::OptimizationStep(double eta)
     // sol = H \ rhs
     MKL_INT nRhs = 1, error;
     solver_opt = MKL_DSS_INDEFINITE;
+    auto solver_handle = solver.GetHandler();
     if ((error = dss_factor_real(solver_handle, solver_opt, H.data())) != MKL_DSS_SUCCESS)
     {
         throw LearnerError("Unable to factor coefficient matrix! Error code: ", error);
@@ -119,6 +101,8 @@ void HessianLearner::GetInertia(std::ostream & os)
     MKL_INT error;
     solver_opt = MKL_DSS_DEFAULTS;
     double ret_values[3];
+    auto solver_handle = solver.GetHandler();
+
     if ((error = dss_statistics(solver_handle, solver_opt, "Inertia", ret_values)) != MKL_DSS_SUCCESS)
     {
         throw LearnerError("Unable to get inertia! Error code: ", error);
@@ -216,93 +200,29 @@ double HessianLearner::ComputeLogDetHessian()
     Hrow.back() = Hrow[n - 1] + 1;
     std::swap(newHcol, Hcol);
     H.resize(Hrow.back());
-
+    const auto nnz = H.size();
     // H = 0
-    cblas_dscal(H.size(), 0, H.data(), 1);
+    cblas_dscal(nnz, 0, H.data(), 1);
     
     // fill in the values, similar to Hf
     ComputeExpX(); // these are the actual variables of the current Hessian
     auto& x = expx;
-    if (true)
+   
+    ComputeGrad();
+
+    ComputeHf();
+
+    for (MKL_INT j = 0; j < n; ++j)
     {
-        ComputeGrad();
-
-        ComputeHf();
-
-        for (MKL_INT j = 0; j < n; ++j)
+        MKL_INT k = Hrow[j];
+        H[k] -= rhs[j];
+        for (; k < Hrow[j + 1]; ++k)
         {
-            MKL_INT k = Hrow[j];
-            H[k] -= rhs[j];
-            for (; k < Hrow[j + 1]; ++k)
-            {
-                H[k] /= x[j] * x[Hcol[k]];
-            }
-        }
-    }else
-    {
-    static std::vector<std::pair<MKL_INT, double>> grad_qi;
-    static std::vector<std::pair<std::pair<MKL_INT, MKL_INT>, double>> Hqijk;
-    
-    for (size_t str_idx = 0; str_idx < Mrow.size() - 1; ++str_idx)
-    {
-        const auto npaths = Mrow[str_idx + 1] - Mrow[str_idx];
-        if (npaths == 1)
-        {   // only diagonal elements
-            const auto path_idx = Mrow[str_idx];
-            for (auto rj = Prow[path_idx]; rj < Prow[path_idx + 1]; ++rj)
-            {   // variables in the one and only path
-                // p_i * #(x_j in path of p_i) / x_j^2
-                
-                GetCoord(Hrow, Hcol, H, Pcol[rj], Pcol[rj]) += p[str_idx] * Pdata[rj] / (x[Pcol[rj]] * x[Pcol[rj]]);
-            }
-        }
-        else
-        {   // equivocal str
-            const auto piqi = p[str_idx] / q[str_idx];
-
-            grad_qi.clear();
-            for (auto path_idx = Mrow[str_idx]; path_idx < Mrow[str_idx + 1]; ++path_idx)
-            {   // path
-                const auto path_prob = path_probs[path_idx];
-
-                Hqijk.clear();
-                for (auto rj = Prow[path_idx]; rj < Prow[path_idx + 1]; ++rj)
-                {   // variables in the path
-
-                    // #(x_j in path of p_i) / x_j^2
-                    SortedInsert(Hqijk, std::make_pair(Pcol[rj], Pcol[rj])) += Pdata[rj] / (x[Pcol[rj]] * x[Pcol[rj]]);
-
-                    // path_prob * #{x_j in path} / exp(x_j)
-                    SortedInsert(grad_qi, Pcol[rj]) += (path_prob / x[Pcol[rj]]) * Pdata[rj];
-
-                    for (auto rk = rj; rk < Prow[path_idx + 1]; ++rk)
-                    {
-                        // #{x_j in path}/exp(x_j) * #{x_k in path}/exp(x_k)
-                        SortedInsert(Hqijk, std::make_pair(Pcol[rj], Pcol[rk])) -= (Pdata[rj] / x[Pcol[rj]]) * (Pdata[rk] / x[Pcol[rk]]);
-                    }
-                }
-                cblas_dscal(Hqijk.size(), piqi * path_prob, &Hqijk.front().second, 3);
-                for (const auto& jk : Hqijk)
-                {
-                    const auto j = jk.first.first;
-                    const auto k_ = jk.first.second;
-                    GetCoord(Hrow, Hcol, H, j, k_) += jk.second;
-                }
-            }
-            cblas_dscal(grad_qi.size(), sqrt(p[str_idx]) / q[str_idx], &grad_qi.front().second, 2);
-            for (size_t rj = 0; rj < grad_qi.size(); ++rj)
-            {
-                const auto j = grad_qi[rj].first;
-                for (size_t rk = rj; rk < grad_qi.size(); ++rk)
-                {
-                    const auto k_ = grad_qi[rk].first;
-                    GetCoord(Hrow, Hcol, H, j, k_) += grad_qi[rj].second * grad_qi[rk].second;
-                }
-            }
+            H[k] /= x[j] * x[Hcol[k]];
         }
     }
-    }
-    return CalculateLogDetH(false);
+   
+    return RealSymmetricLogDet(Hrow.data(), n, Hcol.data(), nnz, H.data(), false);
 }
 
 void HessianLearner::PrintH(std::ostream & os) const
@@ -317,7 +237,7 @@ void HessianLearner::PrintEq(std::ostream & os) const
 
 void HessianLearner::AssembleH(bool Hf)
 {
-    std::set<std::pair<MKL_INT, MKL_INT>> indices;
+    std::vector<std::pair<MKL_INT, MKL_INT>> indices;
     std::vector<MKL_INT> equivocal_indices;
 
     // gather nnz indexes
@@ -333,13 +253,15 @@ void HessianLearner::AssembleH(bool Hf)
                 auto first_path_first_index = Prow[first_path_idx];
                 auto end_path_end_index = Prow[end_path_idx];
 
+                //TODO store only the symmetrical difference of the paths
                 for (auto j = Pcol.begin() + first_path_first_index; j != Pcol.begin() + end_path_end_index; ++j)
                     SortedInsert(equivocal_indices, *j);
                 
+                //! full sub-matrix for this string
                 for (auto i = equivocal_indices.begin(); i != equivocal_indices.end(); ++i)
                 {
                     for (auto j = i; j != equivocal_indices.end(); ++j)
-                        indices.emplace(*i, *j);
+                        SortedInsert(indices, std::make_pair(*i, *j));
                 }
             }
         }
@@ -348,11 +270,11 @@ void HessianLearner::AssembleH(bool Hf)
     // H_g
     for (size_t i = 0; i < GetNumberOfParameters(); ++i)
     {
-        indices.emplace(i, i);
-        indices.emplace(i, GetNumberOfParameters() + Ccol[i]);
+        SortedInsert(indices, decltype(indices)::value_type(i, i));
+        SortedInsert(indices, decltype(indices)::value_type(i, GetNumberOfParameters() + Ccol[i]));
     }
     for (size_t i = GetNumberOfParameters(); i < GetNumberOfAugmentedParameters(); ++i)
-        indices.emplace(i, i);
+        SortedInsert(indices, decltype(indices)::value_type(i, i));
 
     // convert to csr format
     H.clear(); Hrow.clear(); Hcol.clear();
@@ -543,85 +465,6 @@ void HessianLearner::ComputeG()
         expx.data(), &beta, rhs.data() + n);
     // g -= 1
     cblas_daxpy(k, -1.0, ones.data(), 1, rhs.data() + n, 1);
-}
-
-void HessianLearner::DeleteSolver()
-{
-    if (solver_handle)
-    {
-        solver_opt = MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR;
-        auto error = dss_delete(solver_handle, solver_opt);
-        if (error != MKL_DSS_SUCCESS)
-            throw LearnerError("Cannot delete solver of equation, error: ", error);
-        solver_handle = 0;
-    }
-}
-
-double HessianLearner::CalculateLogDetH(bool reorder)
-{
-    if (unique_path)
-    {   // product of diagonal
-        double result = 0;
-        for (size_t i = 0; i < GetNumberOfParameters(); ++i)
-        {
-            if (H[i] > 0)
-                result += std::log(H[i]);
-            else
-                return atof("inf");
-        }
-        return result;
-    }
-    else
-    {   // factorize, get det
-        MKL_INT error;
-        const MKL_INT n = Hrow.size() - 1;
-        const MKL_INT nnz = Hcol.size();
-        if (solver_handle)
-            DeleteSolver();
-
-        solver_opt = MKL_DSS_ZERO_BASED_INDEXING +
-            MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR +
-            MKL_DSS_REFINEMENT_ON;
-        if ((error = dss_create(solver_handle, solver_opt)) != MKL_DSS_SUCCESS)
-        {
-            throw LearnerError("Failed to create DSS for det H! Error code: ", error);
-        }
-
-        solver_opt = MKL_DSS_SYMMETRIC;
-        if ((error = dss_define_structure(solver_handle, solver_opt, Hrow.data(), n, n, Hcol.data(), nnz)) != MKL_DSS_SUCCESS)
-        {
-            throw LearnerError("Unable to define structure of log det Hessian! Error code: ", error);
-        }
-        solver_opt = reorder ? MKL_DSS_GET_ORDER : MKL_DSS_MY_ORDER;
-        perm.resize(n);
-        if (!reorder)
-        {   // stick to original order
-            for (MKL_INT i = 0; i < n; ++i)
-                perm[i] = i;
-        }
-        if ((error = dss_reorder(solver_handle, solver_opt, perm.data())) != MKL_DSS_SUCCESS)
-        {
-            throw LearnerError("Unable to find reorder! Error code: ", error);
-        }
-        solver_opt = MKL_DSS_INDEFINITE;
-        if ((error = dss_factor_real(solver_handle, solver_opt, H.data())) != MKL_DSS_SUCCESS)
-        {
-            throw LearnerError("Unable to factor log det Hessian! Error code: ", error);
-        }
-        solver_opt = MKL_DSS_DEFAULTS;
-        double det[2];
-        if ((error = dss_statistics(solver_handle, solver_opt, "Determinant", det)) != MKL_DSS_SUCCESS)
-        {
-            throw LearnerError("Unable to get determinant of Hessian! Error code: ", error);
-        }
-        else
-        {
-            const double& det_pow = det[0], &det_base = det[1];
-            if (det_base <= 0.0)
-                return atof("inf");
-            return std::log(det_base) + det_pow * M_LN10;
-        }
-    }
 }
 
 void HessianLearner::ComputeRhs()
