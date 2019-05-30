@@ -306,7 +306,7 @@ namespace arg
         SetFlag(bool& def_val,
             const std::initializer_list<const Chr*>& args = {},
             const String& info = String(), bool reset=false, const String& meta = String())
-            : Argument<String>(args, info, meta.empty() ? Convert<String>(typeid(_val).name()) : meta),
+            : Argument<String>(args, info, meta.empty() ? "flag" : meta),
                 _val(def_val), _reset(reset)
         {
         }
