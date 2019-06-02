@@ -33,8 +33,6 @@ void HessianLearner::BuildPathsCallback()
     rhs.resize(GetNumberOfAugmentedParameters());
     _x.resize(GetNumberOfAugmentedParameters(), 1.0);
     expx.resize(GetNumberOfParameters());
-    jgl.resize(GetNumberOfParameters());
-    delta_x.resize(GetNumberOfAugmentedParameters());
 }
 
 void HessianLearner::InitDss(bool reorder)
@@ -68,13 +66,15 @@ HessianLearner::~HessianLearner()
 
 void HessianLearner::OptimizationStep(double eta)
 {
+    aux.resize(GetNumberOfAugmentedParameters());
+
     ComputeRhs();
     ComputeObjective();
     
     // H = 0
     cblas_dscal(H.size(), 0.0, H.data(), 1);
 
-    if (!unique_path && include_Hf)
+    if (include_Hf)
         ComputeHf();
 
     ComputeHg();
@@ -89,11 +89,11 @@ void HessianLearner::OptimizationStep(double eta)
     }
 
     solver_opt = MKL_DSS_REFINEMENT_ON;
-    if ((error = dss_solve_real(solver_handle, solver_opt, rhs.data(), nRhs, delta_x.data())) != MKL_DSS_SUCCESS)
+    if ((error = dss_solve_real(solver_handle, solver_opt, rhs.data(), nRhs, aux.data())) != MKL_DSS_SUCCESS)
     {
         throw LearnerError("Unable to solve equation! Error code: ", error);
     }
-    cblas_daxpy(delta_x.size(), -eta, delta_x.data(), 1, _x.data(), 1);
+    cblas_daxpy(aux.size(), -eta, aux.data(), 1, _x.data(), 1);
 }
 
 void HessianLearner::GetInertia(std::ostream & os)
@@ -188,10 +188,10 @@ double HessianLearner::ComputeLogDetHessian()
     if (!include_Hf && !unique_path)
         AssembleH(true);
 
-    const auto n = GetNumberOfParameters();
+    const MKL_INT n = GetNumberOfParameters();
     std::vector<MKL_INT> newHcol; newHcol.reserve(n); // at least
      // modify the nnz structure of H, you have to just erase the last element from each row
-    for (size_t i = 0; i < n; ++i)
+    for (MKL_INT i = 0; i < n; ++i)
     {
         newHcol.insert(newHcol.end(), &Hcol[Hrow[i]], &Hcol[Hrow[i + 1] - 1]);
         Hrow[i] -= i;
@@ -238,25 +238,60 @@ void HessianLearner::PrintEq(std::ostream & os) const
 void HessianLearner::AssembleH(bool Hf)
 {
     std::vector<std::pair<MKL_INT, MKL_INT>> indices;
-    std::vector<MKL_INT> equivocal_indices;
+    std::vector<std::pair<MKL_INT, double>> equivocal_intersect;
+    equivocal_str_indices.clear();
 
     // gather nnz indexes
     if (Hf && !unique_path)
     {
+        struct Comparer
+        {
+            Comparer(MKL_INT* c, double* d)
+                : cols(c), data(d)
+            {
+            }
+            bool less(const std::pair<MKL_INT, double>& i, const MKL_INT& j)const
+            {
+                return (i.first < cols[j]) ||
+                    (!(i.first < cols[j]) && (i.second < data[j]));
+            }
+            bool greater(const std::pair<MKL_INT, double>& i, const MKL_INT& j)const
+            {
+                return (i.first > cols[j]) ||
+                    (!(i.first > cols[j]) && (i.second > data[j]));
+            }
+            MKL_INT* cols;
+            double* data;
+        } const comp(Pcol.data(), Pdata.data());
+
         for (size_t str_idx = 0; str_idx < Mrow.size() - 1; ++str_idx)
         {
             if (Mrow[str_idx] + 1 < Mrow[str_idx + 1])
             {   // equivocal str
-                equivocal_indices.clear();
-                auto first_path_idx = Mrow[str_idx];
+                auto path_idx = Mrow[str_idx];
                 auto end_path_idx = Mrow[str_idx + 1];
-                auto first_path_first_index = Prow[first_path_idx];
-                auto end_path_end_index = Prow[end_path_idx];
 
-                //TODO store only the symmetrical difference of the paths
-                for (auto j = Pcol.begin() + first_path_first_index; j != Pcol.begin() + end_path_end_index; ++j)
-                    SortedInsert(equivocal_indices, *j);
-                
+                equivocal_str_indices.emplace_back();
+                equivocal_str_indices.back().first = str_idx;
+                auto& equivocal_indices = equivocal_str_indices.back().second;
+
+                equivocal_indices.assign(Pcol.begin() + Prow[path_idx], Pcol.begin() + Prow[path_idx + 1]);
+                equivocal_intersect.clear();
+                std::transform(Pcol.begin() + Prow[path_idx], Pcol.begin() + Prow[path_idx + 1],
+                        Pdata.begin() + Prow[path_idx], std::back_inserter(equivocal_intersect),
+                    [](MKL_INT a, double b) {return std::pair<MKL_INT, double>(a, b); });
+
+                for (++path_idx; path_idx < end_path_idx; ++path_idx)
+                {
+                    const auto first_col_idx = Prow[path_idx];
+                    const auto end_col_idx = Prow[path_idx + 1];
+
+                    Union(equivocal_indices, Pcol.begin() + first_col_idx, Pcol.begin() + end_col_idx);
+                    Intersect(equivocal_intersect, first_col_idx, end_col_idx, comp);
+                }
+
+                Subtract(equivocal_indices, make_first_iterator(equivocal_intersect.begin()), make_first_iterator(equivocal_intersect.end()));
+
                 //! full sub-matrix for this string
                 for (auto i = equivocal_indices.begin(); i != equivocal_indices.end(); ++i)
                 {
@@ -267,84 +302,103 @@ void HessianLearner::AssembleH(bool Hf)
         }
     }
 
-    // H_g
-    for (size_t i = 0; i < GetNumberOfParameters(); ++i)
-    {
-        SortedInsert(indices, decltype(indices)::value_type(i, i));
-        SortedInsert(indices, decltype(indices)::value_type(i, GetNumberOfParameters() + Ccol[i]));
-    }
-    for (size_t i = GetNumberOfParameters(); i < GetNumberOfAugmentedParameters(); ++i)
-        SortedInsert(indices, decltype(indices)::value_type(i, i));
-
     // convert to csr format
+    const MKL_INT n = GetNumberOfParameters();
+    const auto k = GetNumberOfConstraints();
     H.clear(); Hrow.clear(); Hcol.clear();
+    Hrow.reserve(n + k + 1);
+    Hcol.reserve(2 * n + k); // lower bound
+    Hrow.emplace_back(0);
 
-    MKL_INT row = -1;
+    MKL_INT row = 0;
+    if ((indices.empty() || indices.front().first > 0) && n > 0)
+        Hcol.emplace_back(0);
     for (const auto& ij : indices)
     {
-        if (ij.first > row)
+        const auto& i = ij.first;
+        if (i > row)
         {
-            Hrow.emplace_back(Hcol.size());
+            for (MKL_INT r = row; r < ij.first; ++r)
+            {
+                // J_g
+                Hcol.emplace_back(GetNumberOfParameters() + Ccol[r]);
+                // end of row
+                Hrow.emplace_back(Hcol.size());
+
+                if (r + 1 < ij.first)
+                    Hcol.emplace_back(r + 1); // diagonal, if missing
+
+            }
             row = ij.first;
         }
         Hcol.emplace_back(ij.second);
-        H.emplace_back(0.0);
     }
-    Hrow.emplace_back(Hcol.size());
+    for (MKL_INT r = row; r < n; ++r)
+    {
+        // J_g
+        Hcol.emplace_back(GetNumberOfParameters() + Ccol[r]);
+        // end of row
+        Hrow.emplace_back(Hcol.size());
+        if (r + 1 < n)
+            Hcol.emplace_back(r + 1); // diagonal, if missing
+    }
+
+    // zeros at the bottom-right corner
+    for (size_t i = n; i < n + k; ++i)
+    {
+        Hcol.emplace_back(i);
+        Hrow.emplace_back(Hcol.size());
+    }
+
+    H.resize(Hcol.size(), 0.0);
 }
 
 void HessianLearner::ComputeHf()
 {
-    static std::vector<std::pair<MKL_INT, double>> grad_qi;
-    static std::vector<std::pair<std::pair<MKL_INT, MKL_INT>, double>> Hqijk;
+    std::vector<double> grad_qi_qi;
+    std::vector<double> H_qi;
 
-    for (size_t str_idx = 0; str_idx < Mrow.size() - 1; ++str_idx)
+    for (const auto& equivocal_str : equivocal_str_indices)
     {
-        const auto npaths = Mrow[str_idx + 1] - Mrow[str_idx];
-        if (npaths > 1)
-        {   // equivocal str
-            const auto piqi = p[str_idx] / q[str_idx];
+        auto str_idx = equivocal_str.first;
+        const auto& equivocal_indexes = equivocal_str.second;
+        auto pi = p[str_idx];
+        grad_qi_qi.assign(equivocal_indexes.size(), 0.0);
+        H_qi.assign(equivocal_indexes.size() * (equivocal_indexes.size()-1) / 2, 0.0);
 
-            grad_qi.clear();
-            for (auto path_idx = Mrow[str_idx]; path_idx < Mrow[str_idx + 1]; ++path_idx)
-            {   // path
-                const auto path_prob = path_probs[path_idx];
-
-                Hqijk.clear();
-                for (auto rj = Prow[path_idx]; rj < Prow[path_idx + 1]; ++rj)
-                {   // variables in the path
-                    
-                    // #{x_j in path} * path_prob
-                    SortedInsert(grad_qi, Pcol[rj]) += path_prob * Pdata[rj];
-                    
-                    for (auto rk = rj; rk < Prow[path_idx + 1]; ++rk)
-                    {
-                        // #{x_j in path} * #{x_k in path}
-                        SortedInsert(Hqijk, std::make_pair(Pcol[rj], Pcol[rk])) += Pdata[rj] * Pdata[rk];
-                    }
-                }
-                static_assert(sizeof(decltype(Hqijk)::value_type) == 3 * sizeof(decltype(grad_qi)::value_type::second_type), "sizeof(pair<pair<MKL_INT, MKL_INT>, double>) != 3 * sizeof(double)!");
-                cblas_dscal(Hqijk.size(), piqi * path_prob, &Hqijk.front().second, 3);
-                for (const auto& jk : Hqijk)
+        for (auto l = Mrow[str_idx]; l < Mrow[str_idx + 1]; ++l)
+        {
+            auto pl = Prow[l];
+            MKL_INT j = 0;
+            while (j < equivocal_indexes.size() && pl < Prow[l + 1])
+            {
+                // https://stackoverflow.com/a/4609795/3583290
+                switch ((equivocal_indexes[j] < Pcol[pl]) - (Pcol[pl] < equivocal_indexes[j]))
                 {
-                    const auto j = jk.first.first;
-                    const auto k_ = jk.first.second;
-                    // H[j,k] -= pi / q_i * path_prob * Sum( #{x_j in path} * #{x_k in path} )
-                    GetCoord(Hrow, Hcol, H, j, k_) -= jk.second;
+                case -1: ++pl; break;
+                case  1: ++j; break;
+                default: 
+                    grad_qi_qi[j] += Pdata[pl] * relative_path_probs[l];
+                    ++j;
+                    ++pl;
                 }
             }
-            static_assert(sizeof(decltype(grad_qi)::value_type) == 2 * sizeof(decltype(grad_qi)::value_type::second_type), "sizeof(pair<MKL_INT, double>) != 2 * sizeof(double)!");
-            // sqrt(qi)/qi
-            cblas_dscal(grad_qi.size(), sqrt(p[str_idx]) / q[str_idx], &grad_qi.front().second, 2);
-            for (size_t rj = 0; rj < grad_qi.size(); ++rj)
+        }
+
+        for (MKL_INT j = 0; j < equivocal_indexes.size(); ++j)
+        {
+            for (MKL_INT k = j; k < equivocal_indexes.size(); ++k)
             {
-                const auto j = grad_qi[rj].first;
-                for (size_t rk = rj; rk < grad_qi.size(); ++rk)
+                double Hjk = 0.0;
+                for (auto l = Mrow[str_idx]; l < Mrow[str_idx + 1]; ++l)
                 {
-                    const auto k_ = grad_qi[rk].first;
-                    // H[j,k] += pi * grad_qi_j/qi * grad_qi_k/qi
-                    GetCoord(Hrow, Hcol, H, j, k_) += grad_qi[rj].second * grad_qi[rk].second;
+                    // TODO this could be faster!
+                    Hjk -= GetCoord2(Prow, Pcol, Pdata, l, equivocal_indexes[j]) *
+                           GetCoord2(Prow, Pcol, Pdata, l, equivocal_indexes[k]) *
+                           relative_path_probs[l];
                 }
+                Hjk += grad_qi_qi[j] * grad_qi_qi[k];
+                GetCoord(Hrow, Hcol, H, equivocal_indexes[j], equivocal_indexes[k]) += pi * Hjk;
             }
         }
     }
@@ -355,22 +409,14 @@ void HessianLearner::ComputeExpX()
     vdExp(GetNumberOfParameters(), _x.data(), expx.data());
 }
 
-void HessianLearner::ComputeJgL()
-{
-    const MKL_INT n = GetNumberOfParameters(), k = GetNumberOfConstraints();
-    double alpha = 1.0, beta = 0.0;
-    mkl_dcsrmv("n", &n, &k, &alpha, "GxxCx",
-        expx.data(), Ccol.data(), Crow.data(), Crow.data() + 1,
-        _x.data() + n, &beta, jgl.data());
-}
-
 void HessianLearner::InitSlackVariables()
 {
     double alpha = 1.0, beta = 0.0;
     const MKL_INT n = GetNumberOfParameters(), k = GetNumberOfConstraints();
     std::vector<double> sumexp2x(k);
     // this is going to contain the pseudo inverse of J
-    auto& PInvJ = jgl;
+    auto& PInvJ = aux;
+    PInvJ.resize(n);
 
     ComputeExpX();
     ComputeGrad();
@@ -406,48 +452,52 @@ void HessianLearner::InitSlackVariables()
 
 void HessianLearner::ComputeGrad()
 {
-    static std::vector<double> aux, aux2;
-    if (aux.empty() && unique_path) // grad_f is constant, we calculate it for the first time only
-    {
-        // aux <- -P^t p
-        aux.resize(GetNumberOfParameters());
-        const MKL_INT row = GetNumberOfPaths(); // equal the number of strings
-        const MKL_INT col = GetNumberOfParameters();
-        const double alpha = -1.0, beta = 0.0;
-        mkl_dcsrmv("t", &row, &col, &alpha, "GxxCx",
-            Pdata.data(), Pcol.data(), Prow.data(), Prow.data() + 1,
-            p.data(), &beta, aux.data());
+    MKL_INT row, col;
+    double alpha, beta;
+
+    if (grad_aux.empty())
+    {   // initialize
+        if (unique_path)
+        {   // gradient is constant: -P^t.p
+            grad_aux.resize(GetNumberOfParameters());
+            row = GetNumberOfPaths(); // equal the number of strings
+            col = GetNumberOfParameters();
+            alpha = -1.0; beta = 0.0;
+            mkl_dcsrmv("t", &row, &col, &alpha, "GxxCx",
+                Pdata.data(), Pcol.data(), Prow.data(), Prow.data() + 1,
+                p.data(), &beta, grad_aux.data());
+        }
+        else
+        {   // a useful quantity is precomputed: -M^t.p
+            grad_aux.resize(GetNumberOfPaths());
+
+            row = GetNumberOfStrings();
+            col = GetNumberOfPaths();
+            alpha = -1.0; beta = 0.0;
+
+            mkl_dcsrmv("t", &row, &col, &alpha, "GxxCx",
+                ones.data(), Mcol.data(), Mrow.data(), Mrow.data() + 1,
+                p.data(), &beta, grad_aux.data());
+        }
     }
-    else
-        aux.resize(GetNumberOfPaths()); // for future use
 
     ComputeModeledProbs();
-
     if (unique_path)
     {
-        // rhs <- aux
-        cblas_dcopy(GetNumberOfParameters(), aux.data(), 1, rhs.data(), 1);
+        // rhs <- grad_aux
+        cblas_dcopy(GetNumberOfParameters(), grad_aux.data(), 1, rhs.data(), 1);
     }
     else
     {
-        MKL_INT row, col;
-        aux2.resize(GetNumberOfStrings());
+        aux.resize(GetNumberOfPaths());
 
-        // aux2 <- p/q
-        vdDiv(GetNumberOfStrings(), p.data(), q.data(), aux2.data());
+        // aux <- (-M^t.p)*relative_path_probs
+        vdMul(GetNumberOfPaths(), relative_path_probs.data(), grad_aux.data(), aux.data());
 
-        // aux <- (diag(path_probs).M^t).p/q
-        row = GetNumberOfStrings();
-        double alpha = 1.0, beta = 0.0;
-        col = GetNumberOfPaths();
-        mkl_dcsrmv("t", &row, &col, &alpha, "GxxCx",
-            path_probs.data(), Mcol.data(), Mrow.data(), Mrow.data() + 1,
-            aux2.data(), &beta, aux.data());
-
-        // rhs <- -P^t.aux
-        alpha = -1.0;  beta = 0.0;
+        // rhs <- P^t.aux
         row = GetNumberOfPaths();
         col = GetNumberOfParameters();
+        alpha = 1.0; beta = 0.0;
         mkl_dcsrmv("t", &row, &col, &alpha, "GxxCx",
             Pdata.data(), Pcol.data(), Prow.data(), Prow.data() + 1,
             aux.data(), &beta, rhs.data());
@@ -470,23 +520,30 @@ void HessianLearner::ComputeG()
 void HessianLearner::ComputeRhs()
 {
     ComputeExpX();
-    ComputeJgL();
     ComputeGrad();
     ComputeG();
 
-    cblas_daxpy(GetNumberOfParameters(), 1.0, jgl.data(), 1, rhs.data(), 1);
+    // J_g.l = expx[C].lambda
+    // rhs[:n] += J_g.l
+    const MKL_INT n = GetNumberOfParameters(), k = GetNumberOfConstraints();
+    double alpha = 1.0, beta = 1.0;
+    mkl_dcsrmv("n", &n, &k, &alpha, "GxxCx",
+        expx.data(), Ccol.data(), Crow.data(), Crow.data() + 1,
+        _x.data() + n, &beta, rhs.data());
 }
 
 void HessianLearner::ComputeHg()
 {
     const MKL_INT n = GetNumberOfParameters(), k = GetNumberOfConstraints();
+    const double* lambda = _x.data() + n;
+
     if (n > 0)
-        H[0] += jgl[0];
+        H[0] += expx[0]*lambda[0];
     for (MKL_INT i = 0; i < n - 1; ++i)
     {
         const auto r = Hrow[i + 1];
         H[r - 1] += expx[i];
-        H[r] += jgl[i + 1];
+        H[r] += expx[i + 1] * lambda[Ccol[i + 1]];
     }
     if (n > 0)
     {

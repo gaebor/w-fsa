@@ -45,24 +45,25 @@ void Learner::Renormalize()
 {
     const MKL_INT n = GetNumberOfParameters();
     const MKL_INT k = GetNumberOfConstraints();
-    std::vector<double> y(n), g(k);
     double alpha = 1.0, beta = 0.0;
-
+    aux.resize(n + k);
+    double* y = aux.data();
+    double* g = aux.data() + n;
     // y <- exp(x)
-    vdExp(n, _x.data(), y.data());
+    vdExp(n, _x.data(), y);
     // g <- C^t.exp(x)
     mkl_dcsrmv("t", &n, &k, &alpha, "GxxCx",
         ones.data(), Ccol.data(), Crow.data(), Crow.data() + 1,
-        y.data(), &beta, g.data());
+        y, &beta, g);
     // g <- log(C^t.exp(x))
-    vdLn(k, g.data(), g.data());
+    vdLn(k, g, g);
 
     // x -= C.g
     alpha = -1.0;
     beta = 1.0;
     mkl_dcsrmv("n", &n, &k, &alpha, "GxxCx",
         ones.data(), Ccol.data(), Crow.data(), Crow.data() + 1,
-        g.data(), &beta, _x.data());
+        g, &beta, _x.data());
 }
 
 void Learner::PrintJ(std::ostream & os)const 
@@ -331,16 +332,20 @@ void Learner::BuildStructureMtx(const Fsa& fsa, const Corpus& corpus, bool bfs)
 
 void Learner::AssignConstants()
 {
-    std::vector<double> logp(GetNumberOfStrings());
+    aux.resize(GetNumberOfStrings());
 
     ones.assign(std::max(GetNumberOfPaths(), GetNumberOfParameters()), 1.0);
 
-    vdLn(GetNumberOfStrings(), p.data(), logp.data());
-    plogp = cblas_ddot(p.size(), p.data(), 1, logp.data(), 1);
+    vdLn(GetNumberOfStrings(), p.data(), aux.data());
+    plogp = cblas_ddot(p.size(), p.data(), 1, aux.data(), 1);
 
     q.resize(GetNumberOfStrings());
     logq.resize(GetNumberOfStrings());
-    path_probs.resize(GetNumberOfPaths());
+
+    if (!unique_path)
+        relative_path_probs.resize(GetNumberOfPaths());
+    else
+        relative_path_probs.clear();
 }
 
 double Learner::LogAuxiliaryVolume() const
@@ -373,34 +378,49 @@ void Learner::ComputeModeledProbs()
     MKL_INT row, col;
     double alpha = 1.0, beta = 0.0;
 
-    // path_probs = P.x
-    row = GetNumberOfPaths();
-    col = GetNumberOfParameters();
-    mkl_dcsrmv("n", &row, &col, &alpha, "GxxCx",
-        Pdata.data(), Pcol.data(), Prow.data(), Prow.data() + 1,
-        _x.data(), &beta, path_probs.data());
-
     if (unique_path)
-    {
+    {   // relative_path_probs holds nothing in this case!
+
         // logq = P.x
-        logq = path_probs;
-        // path_probs = exp(P.x)
-        vdExp(path_probs.size(), path_probs.data(), path_probs.data());
-        q = path_probs;       
+        row = GetNumberOfPaths();
+        col = GetNumberOfParameters();
+        mkl_dcsrmv("n", &row, &col, &alpha, "GxxCx",
+            Pdata.data(), Pcol.data(), Prow.data(), Prow.data() + 1,
+            _x.data(), &beta, logq.data());
+
+        // q = exp(P.x)
+        vdExp(logq.size(), logq.data(), q.data());
     }else
     {
-        // path_probs = exp(path_probs)
-        vdExp(row, path_probs.data(), path_probs.data());
+        aux.resize(GetNumberOfPaths());
 
-        // q = M.path_probs
+        // relative_path_probs = P.x
+        row = GetNumberOfPaths();
+        col = GetNumberOfParameters();
+        mkl_dcsrmv("n", &row, &col, &alpha, "GxxCx",
+            Pdata.data(), Pcol.data(), Prow.data(), Prow.data() + 1,
+            _x.data(), &beta, relative_path_probs.data());
+
+        // relative_path_probs = exp(P.x)
+        vdExp(row, relative_path_probs.data(), relative_path_probs.data());
+
+        // q = M.relative_path_probs
         col = row;
         row = q.size();
         mkl_dcsrmv("n", &row, &col, &alpha, "GxxCx",
             ones.data(), Mcol.data(), Mrow.data(), Mrow.data() + 1,
-            path_probs.data(), &beta, q.data());
+            relative_path_probs.data(), &beta, q.data());
 
         // logq = log(q)
         vdLn(q.size(), q.data(), logq.data());
+
+        // aux <- M^t.q
+        mkl_dcsrmv("t", &row, &col, &alpha, "GxxCx",
+            ones.data(), Mcol.data(), Mrow.data(), Mrow.data() + 1,
+            q.data(), &beta, aux.data());
+
+        // relative_path_probs /= M^t.q
+        vdDiv(GetNumberOfPaths(), relative_path_probs.data(), aux.data(), relative_path_probs.data());
     }
 }
 

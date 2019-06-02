@@ -58,7 +58,8 @@ protected:
 private:
     void InitDss(bool reorder=true);
 
-    void AssembleH(bool Hf = false); //!< structure of H
+    //!< structure of H
+    void AssembleH(bool Hf = false);
 
     //! exp(x)
     void ComputeExpX();
@@ -92,6 +93,7 @@ private:
 
     //! adds H<sub>f</sub> to the upper-left corner of H
     /*!
+        does nothing if unique_path is true
     <pre>
                        ( grad q_i   (grad q_i)^t   H_q_i )
         H_f = Sum  p_i ( -------- . ------------ - ----- )
@@ -110,7 +112,7 @@ private:
 
     //! rhs[:n] <- grad f
     /*!
-        Meanwhile computes the path probs, modeled probs (q) and their logarithms (logq)
+        calls ComputeModeledProbs
         
         M_ij = 1 if the j-th path participates in the i-th string, 0 otherwise
         </pre>
@@ -154,7 +156,7 @@ private:
     //! rhs[n:] <- C^t.exp(x) - 1
     void ComputeG();
 
-    std::vector<double> rhs, H, expx, jgl, delta_x;
+    std::vector<double> rhs, H, expx, grad_aux;
     std::vector<MKL_INT> Hrow, Hcol;
     std::vector<MKL_INT> perm;
     DssSolverHandler solver;

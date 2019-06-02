@@ -60,7 +60,7 @@ public:
     double GetCommonSupport()const;
     double GetTotalModeledProb()const;
 
-    //! computes the modeled probabilities of paths, strings and log-prob of strings and stores them internally
+    //! computes the modeled (log-)probabilities and the relative_path_probs if needed (!unique_path)
     void ComputeModeledProbs();
     //! computes KL and sum(q)
     void ComputeObjective();
@@ -104,8 +104,18 @@ private:
     */
     void AssignConstants();
 protected:
-    std::vector<double> _x; //!< parameters
-    std::vector<double> p, q, logq, path_probs;
+    //! parameters
+    std::vector<double> _x; 
+    //! measured probabilities 
+    std::vector<double> p;
+    //! modeled probabilities 
+    std::vector<double> q, logq;
+    /*! if unique_path, then relative_path_probs holds some auxiliary data!
+        otherwise holds the relative path probabilities
+    */
+    std::vector<double> relative_path_probs;
+    //! for various purposes, but only used locally
+    std::vector<double> aux;
 private:
     double common_support, plogp, kl, modeled_prob, aux_hessian, model_volume;
     size_t auxiliary_parameters;
@@ -131,6 +141,9 @@ protected:
         This matrix is identity <-> unique path property
     */
     std::vector<MKL_INT> Mrow, Mcol;
+
+    std::vector<std::pair<MKL_INT, std::vector<MKL_INT>>> equivocal_str_indices;
+
 protected:
     bool unique_path;
 };

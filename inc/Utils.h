@@ -185,6 +185,102 @@ struct Lesser
     }
 };
 
+template<class Vec1, class Iterator2, class Compare>
+void Intersect(Vec1& v1, Iterator2 first2, Iterator2 last2, const Compare& comp)
+{
+    auto first1 = v1.begin();
+    auto last1 = v1.end();
+    
+    while (first1 != last1 && first2 != last2)
+    {
+        if (comp.less(*first1, first2))
+        {   // remove from first
+            first1 = v1.erase(first1);
+            // iterator validity!
+            last1 = v1.end();
+        }
+        else if (comp.greater(*first1, first2))
+        {   // skip from second
+            ++first2;
+        }
+        else
+        {   // leave it
+            ++first1;
+            ++first2;
+        }
+    }
+    // remove the rest, if any
+    v1.erase(first1, last1);
+}
+template<class Vec1, class Iterator2, class Compare>
+void Subtract(Vec1& v1, Iterator2 first2, Iterator2 last2, const Compare& comp)
+{
+    auto first1 = v1.begin();
+    auto last1 = v1.end();
+
+    while (first1 != last1 && first2 != last2)
+    {
+        if (comp(*first1, *first2))
+        {   // keep it
+            ++first1;
+        }
+        else if (comp(*first2, *first1))
+        {   // skip from second
+            ++first2;
+        }
+        else
+        {   // remove from first
+            first1 = v1.erase(first1);
+            // iterator validity!
+            last1 = v1.end();
+            ++first2;
+        }
+    }
+}
+
+template<class Vec1, class Iterator2>
+void Subtract(Vec1& v1, Iterator2 first2, Iterator2 last2)
+{
+    Subtract<Vec1, Iterator2, std::less<typename Vec1::value_type>>(v1, first2, last2, std::less<typename Vec1::value_type>());
+}
+
+template<class Vec1, class Iterator2, class Compare>
+void Union(Vec1& v1, Iterator2 first2, Iterator2 last2, Compare comp)
+{
+    static_assert(std::is_same<typename Vec1::value_type, typename Iterator2::value_type>::value, "the two iterables should have the same value_type!");
+    auto first1 = v1.begin();
+    auto last1 = v1.end();
+
+    while (first1 != last1 && first2 != last2)
+    {
+        if (comp(*first1, *first2))
+        {
+            ++first1;
+        }
+        else if (comp(*first2, *first1))
+        {
+            first1 = v1.insert(first1, *first2);
+            // iterator validity!
+            last1 = v1.end();
+            ++first1;
+            ++first2;
+        }
+        else
+        {
+            ++first1;
+            ++first2;
+        }
+    }
+    // add the rest, if any
+    v1.insert(v1.end(), first2, last2);
+}
+
+template<class Vec1, class Iterator2>
+void Union(Vec1& v1, Iterator2 first2, Iterator2 last2)
+{
+    Union<Vec1, Iterator2, std::less<typename Vec1::value_type>>(v1, first2, last2, std::less<typename Vec1::value_type>());
+}
+
 double mxlogx(double x);
 
 //! kind-of a vector implementation of map
@@ -201,10 +297,19 @@ Value& SortedInsert(std::vector<std::pair<Key, Value>, Allocator>& vec, const Ke
 }
 
 template<typename Value>
-Value& GetCoord(const std::vector<MKL_INT>& rows, std::vector<MKL_INT>& cols, std::vector<Value>& data, MKL_INT i, MKL_INT j)
+Value& GetCoord(const std::vector<MKL_INT>& rows, const std::vector<MKL_INT>& cols, std::vector<Value>& data, MKL_INT i, MKL_INT j)
 {
     auto where = std::lower_bound(cols.data() + rows[i], cols.data() + rows[i + 1], j);
     return data[where - cols.data()];
+}
+
+template<typename Value>
+Value GetCoord2(const std::vector<MKL_INT>& rows, const std::vector<MKL_INT>& cols, const std::vector<Value>& data, MKL_INT i, MKL_INT j)
+{
+    const auto begin = cols.data() + rows[i];
+    const auto end = cols.data() + rows[i + 1];
+    auto where = std::lower_bound(begin, end, j);
+    return (where == end || *where != j) ? 0.0 : data[where - cols.data()];
 }
 
 struct DssSolverHandler
@@ -220,4 +325,56 @@ double RealSymmetricLogDet(const MKL_INT* const Hrow, const MKL_INT n,
                        const MKL_INT* const Hcol, const MKL_INT nnz,
                        const double* const Hdata, bool reorder=false);
 
-void Dok2Csr();
+//! iterator for iterating only on first value of pairs
+template<class Iterator>
+struct FirstIterator
+{
+    typedef typename Iterator::value_type::first_type value_type;
+    FirstIterator(const Iterator& it) : _it(it) {}
+    FirstIterator& operator++()
+    {
+        ++_it;
+        return *this;
+    }
+    value_type& operator*()const
+    {
+        return _it->first;
+    }
+    bool operator==(const FirstIterator& other)const
+    {
+        return _it == other._it;
+    }
+    bool operator!=(const FirstIterator& other)const
+    {
+        return _it != other._it;
+    }
+    Iterator _it;
+};
+
+template<class Iterator>
+FirstIterator<Iterator> make_first_iterator(const Iterator& it)
+{
+    return FirstIterator<Iterator>(it);
+}
+
+//template<class Iterable>
+//void Dok2Csr(const Iterable& indices, std::vector<MKL_INT>& rows, std::vector<MKL_INT>& cols, bool include_diag = false)
+//{
+//    rows.clear(); cols.clear();
+//    MKL_INT row = -1;
+//    for (const auto& ij : indices)
+//    {
+//        if (ij.first > row)
+//        {
+//            for (MKL_IT r = row + 1; r < ij.first; ++r)
+//            {   // fill in the missing diagonals
+//
+//            }
+//            rows.emplace_back(cols.size());
+//            row = ij.first;
+//        }
+//        Hcol.emplace_back(ij.second);
+//    }
+//    rows.emplace_back(cols.size());
+//
+//}
