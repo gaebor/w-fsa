@@ -3,7 +3,7 @@ project (wfsa)
 
 link_directories($ENV{MKLROOT}/lib/intel64)
 
-set (CMAKE_CXX_STANDARD 11)
+set (CMAKE_CXX_STANDARD 14)
 
 if(UNIX)
     add_compile_options("-m64" "-Wall")
@@ -52,3 +52,5 @@ add_test(test_talk2v wfsa -a ../data/talk.wfsa -c ../data/test.corpus -p -n -eva
 
 set_tests_properties(test1 PROPERTIES WILL_FAIL TRUE)
 set_tests_properties(test1v PROPERTIES WILL_FAIL TRUE)
+set_tests_properties(test_talk2 PROPERTIES WILL_FAIL TRUE)
+set_tests_properties(test_talk2v PROPERTIES WILL_FAIL TRUE)

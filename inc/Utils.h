@@ -22,6 +22,7 @@
 #include "Isatty.h"
 
 #include "mkl_types.h"
+#include "mkl_spblas.h"
 
 std::pair<const char*, char> GetWord(char*& input, const char* separator= " ");
 
@@ -100,7 +101,7 @@ void PrintCooMtx(std::ostream& os,
     const std::vector<MKL_INT>& rows,
     const std::vector<MKL_INT>& cols);
 
-void PrintCsrMtx(std::ostream& os,
+void PrintCsrMtx(FILE* f,
     const std::vector<double>& data,
     const std::vector<MKL_INT>& rows,
     const std::vector<MKL_INT>& cols,
@@ -356,6 +357,20 @@ FirstIterator<Iterator> make_first_iterator(const Iterator& it)
 {
     return FirstIterator<Iterator>(it);
 }
+
+struct SparseMtxHandle
+{
+    sparse_matrix_t A = nullptr;
+    matrix_descr desc;
+    SparseMtxHandle();
+    explicit SparseMtxHandle(MKL_INT n, MKL_INT k, MKL_INT* rows, MKL_INT* cols, double* x);
+    ~SparseMtxHandle();
+    void Init(MKL_INT n, MKL_INT k, MKL_INT* rows, MKL_INT* cols, double* x);
+    void dot(const double *x, double *result,
+            sparse_operation_t op = SPARSE_OPERATION_NON_TRANSPOSE,
+            double alpha = 1.0, double beta = 0.0
+        )const;
+};
 
 //template<class Iterable>
 //void Dok2Csr(const Iterable& indices, std::vector<MKL_INT>& rows, std::vector<MKL_INT>& cols, bool include_diag = false)

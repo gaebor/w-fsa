@@ -36,7 +36,6 @@ int main(int argc, const char* argv[])
     //    std::cerr << "Unable to specify ILP64 interface layer!" << std::endl;
     //    return 1;
     //}
-
     {
         MKLVersion Version;
         mkl_get_version(&Version);
@@ -110,16 +109,17 @@ int main(int argc, const char* argv[])
     try {
 
     Fsa fsa;
-    HessianLearner learner;
+    std::unique_ptr<Learner> learner(new HessianLearner());
     if (!matrices_filename.empty() && matrices_filename.front() == '<')
     {   // skip Corpus and Fsa
-        std::cerr << "Loading matrices \"" << matrices_filename.substr(1) << "\" ... "; std::cerr.flush();
-        if (!learner.LoadMatrices(matrices_filename.substr(1)))
+        std::cerr << "Loading matrices \"" << matrices_filename.substr(1) << "\" ... ";
+        std::cerr.flush();
+        if (!learner->LoadMatrices(matrices_filename.substr(1)))
             throw LearnerError("Unable to load Learner from \"", matrices_filename.substr(1), "\"");
         std::cerr << "done" << std::endl;
     }else
     {
-        std::cerr << "Corpus: ";
+        std::cerr << "Corpus: "; std::cerr.flush();
         Corpus corpus;
         if (FILE* f = fopen(corpus_filename.c_str(), "r"))
         {
@@ -136,7 +136,7 @@ int main(int argc, const char* argv[])
         corpus.Renormalize();
         std::cerr << ", renormalized to " << corpus.Sum() << std::endl;
 
-        std::cerr << "Automaton: ";
+        std::cerr << "Automaton: "; std::cerr.flush();
 
         if (FILE* f = fopen(automaton_filename.c_str(), "r"))
         {
@@ -165,12 +165,15 @@ int main(int argc, const char* argv[])
                     const Fsa::Emissions::value_type& emission) -> Path&
             {
                 history.first += emission.str;
-                history.second += " ";
+                history.second += " -> ";
                 history.second += transition.next->first;
+                history.second += "[";
+                history.second += emission.str;
+                history.second += "]";
                 return history;
             }, [](const Path& path)
             {
-                std::cerr << path.first << ": " << path.second << std::endl;
+                fprintf(stderr, "%s: %s\n", path.first.c_str(), path.second.c_str());
             });
             const auto& start_state = fsa.GetTransitionMtx().at(fsa.GetStartState());
             const auto empty_history = Path("", fsa.GetStartState());
@@ -182,28 +185,44 @@ int main(int argc, const char* argv[])
                     recognizer.RecognizeDFS(word.first.c_str(), start_state, empty_history);
         }
 
-        learner.BuildConstraints(fsa);
+        std::cerr << "Recognize: "; std::cerr.flush();
+        learner->BuildFrom(fsa, corpus, recognize == 0);
 
-        std::cerr << "Recognize: ";
-        learner.BuildPaths(fsa, corpus, recognize == 0);
-        std::cerr << "\n\tstrings: " << learner.GetNumberOfStrings() <<
-            "\n\tpaths: " << learner.GetNumberOfPaths() <<
-            "\n\tcommon support: " << learner.GetCommonSupport() <<
-            "\n\tunique paths: " << (learner.HasUniquePaths() ? "true" : "false") <<
+        std::cerr << "\n\tstrings: " << learner->GetNumberOfStrings() <<
+            "\n\tpaths: " << learner->GetNumberOfPaths() <<
+            "\n\tcommon support: " << learner->GetCommonSupport() <<
+            "\n\tunique paths: " << (learner->HasUniquePaths() ? "true" : "false") <<
             std::endl;
     }
 
+    if (learner->GetNumberOfParameters() == 0)
+    {
+        //TODO The automaton may generate one string deterministically!
+        std::cerr << "Empty automaton!" << std::endl;
+        return 1;
+    }
+    if (learner->GetNumberOfStrings() == 0)
+    {
+        //TODO aux model only!
+        std::cerr << "Automaton cannot generate any of the strings!" << std::endl;
+        return 1;
+    }
+    learner->Finalize();
+
     if (print)
     {
-        learner.PrintC(std::cerr << "C:\n");
-        learner.PrintM(std::cerr << "M:\n");
-        learner.PrintP(std::cerr << "P:\n");
+        fputs("C:\n", stderr);
+        learner->PrintC(stderr);
+        fputs("M:\n", stderr);
+        learner->PrintM(stderr);
+        fputs("P:\n", stderr);
+        learner->PrintP(stderr);
     }
 
     if (!matrices_filename.empty() && matrices_filename.front() == '>')
     {
         std::cerr << "Saving matrices \"" << matrices_filename.substr(1) << "\" ... "; std::cerr.flush();
-        if (!learner.SaveMatrices(matrices_filename.substr(1)))
+        if (!learner->SaveMatrices(matrices_filename.substr(1)))
             std::cerr << "Failed!";
         else
             std::cerr << "Done";
@@ -214,116 +233,90 @@ int main(int argc, const char* argv[])
     if (initx)
     {
         std::vector<double> x;
-        while (std::cin && x.size() < learner.GetNumberOfParameters())
+        while (std::cin && x.size() < learner->GetNumberOfParameters())
         {
             x.emplace_back();
             std::cin >> x.back();
         };
         if (!std::cin)
             throw MyError("Cannot read initial x value!");
-        learner.Init(initflags, x.data());
+        learner->Init(initflags, x.data());
     }else
-        learner.Init(initflags);
+        learner->Init(initflags);
 
     std::cerr << "done" << std::endl;
-    std::cerr << "augmented Hessian:\n\trows: " << learner.GetNumberOfParameters() + learner.GetNumberOfConstraints() <<
-        "\n\tnnz: " << learner.GetNnzHessian() <<
-        "\n\tfill: " << learner.GetHessianFillRatio() << std::endl;
-    
+    //std::cerr << "augmented Hessian:\n\trows: " << learner.GetNumberOfParameters() + learner.GetNumberOfConstraints() <<
+    //    "\n\tnnz: " << learner.GetNnzHessian() <<
+    //    "\n\tfill: " << learner.GetHessianFillRatio() << std::endl;
+    //
     const auto width = (int)ceil(log10(epochs + 1));
     if (epochs > 0)
     {
-        std::cerr << "Optimization:\nepoch           KL    de-norm    graderr|Inertia" << std::endl;
+        std::cerr << "Optimization:\nepoch\t" << learner->GetOptimizationHeader() << std::endl;
         for (int e = 1; e <= epochs; ++e)
         {
-            learner.OptimizationStep(eta);
-            if (print)
-            {
-                learner.PrintEq(std::cerr << "H:\n");
-            }
+            learner->OptimizationStep(eta, print);
 
-            fprintf(stderr, "%0*d", width, e);
-            fprintf(stderr, "%*s", 7-width, "");
+            fprintf(stderr, "%0*d\t", width, e);
             
-            const double kl = learner.GetKLDistance(), tol1 = learner.DeNormalizedFactor(), tol2 = learner.GradientError();
-
-            fprintf(stderr, " ");
-            PrintFixedWidth(stderr, kl, 10);
-            fprintf(stderr, " ");
-            PrintFixedWidth(stderr, tol1, 10);
-            fprintf(stderr, " ");
-            PrintFixedWidth(stderr, tol2, 10);
-
-            for (double x : { kl, tol1, tol2 })
+            const auto info = learner->GetOptimizationInfo();
+            for (double x : info)
+            {
+                PrintFixedWidth(stderr, x, 9);
+                fputs(" ", stderr);
+            }
+            std::cerr << std::endl;
+            for (double x : info)
             {
                 if (std::isnan(x) || std::isinf(x))
                 {
                     std::cerr << std::endl;
-                    throw LearnerError("inf/nan detected at epoch ", e);
+                    throw LearnerError(x, " detected at epoch ", e);
                 }
             }
-            learner.GetInertia(std::cerr << "|");
 
-            if (tol1 <= tolerance && tol2 <= tolerance)
+            if (learner->HaltCondition(tolerance))
                 break;
         }
     }
 
     if (normalize)
-        learner.Renormalize();
+        learner->Renormalize();
 
     if (evaluate)
     {
-        learner.ComputeModeledProbs();
-        learner.ComputeObjective();
-
-        const auto logdetHessian = learner.ComputeLogDetHessian();
-
-        std::cerr << "Hessian:\n\trows: " << learner.GetNumberOfParameters() <<
-            "\n\tnnz: " << learner.GetNnzHessian() <<
-            "\n\tfill: " << learner.GetHessianFillRatio() << std::endl;
-        if (print)
-            learner.PrintH(std::cerr);
-        
-        // TODO: original + aux model parameters
-
+        const auto results = learner->GetOptimizationResult(print);
         std::cerr.precision(DBL_DIG);
-        std::cerr << "Result:" <<
-            ' ' << learner.GetKLDistance() <<
-            ' ' << mxlogx(learner.GetCommonSupport()) <<
-            ' ' << learner.LogModelVolume() <<
-            ' ' << learner.LogAuxiliaryVolume() <<
-            ' ' << logdetHessian <<
-            ' ' << learner.LogDetAuxiliaryHessian() <<
-            ' ' << learner.GetNumberOfParameters() - learner.GetNumberOfConstraints() + 
-                    std::max<MKL_INT>(0, learner.GetNumberOfAuxParameters() - 1)
-            << std::endl;
+        std::cerr << "Result:";
+        for (double x : results)
+            std::cerr << ' ' << x;
+        std::cerr << std::endl;
     }
     if (!suppress)
     {
-        if (fsa.GetNumberOfParameters() == learner.GetNumberOfParameters())
+        if (fsa.GetNumberOfParameters() == learner->GetNumberOfParameters())
         {// FSA has been loaded
-            fsa.ResetWeights(learner.GetWeights());
+            fsa.ResetWeights(learner->GetWeights());
             fsa.Dump(stdout);
         }
         else
         {// loaded from matrices
-            for (size_t i = 0; i < learner.GetNumberOfParameters(); ++i)
-            {
-                std::cout << learner.GetWeights()[i] << " ";
-            }
-            std::cout << std::endl;
-            for (size_t i = learner.GetNumberOfParameters(); i < learner.GetNumberOfAugmentedParameters(); ++i)
-            {
-                std::cout << learner.GetWeights()[i] << " ";
-            }
+            if (learner->GetNumberOfParameters() > 0)
+                printf("%g", *(learner->GetWeights()));
+            for (auto* x = learner->GetWeights() + 1; x < learner->GetWeights() + learner->GetNumberOfParameters(); ++x)
+                printf("%g ", *x);
+            //std::cout << std::endl;
+            //for (size_t i = learner->GetNumberOfParameters(); i < learner->GetNumberOfAugmentedParameters(); ++i)
+            //{
+            //    std::cout << learner->GetWeights()[i] << " ";
+            //}
             std::cout << std::endl;
         }
     }
     }
     catch (std::exception& e)
     {
-        std::cerr << e.what() << std::endl;
+        fprintf(stderr, "%s\n", e.what());
         return 1;
     }
     return 0;

@@ -12,83 +12,72 @@
 #include "Recognize.h"
 
 Learner::Learner()
-    : common_support(0.0), plogp(0.0), kl(0.0), modeled_prob(0.0),
+    : common_support(0.0), plogp(0.0), kl(0.0),
     unique_path(false)
 {
 }
 
-Learner::Learner(const Fsa& fsa)
-:   common_support(0.0), plogp(0.0), kl(0.0), modeled_prob(0.0),
-    unique_path(false)
-{
-    BuildConstraints(fsa); 
-}
-
-Learner::Learner(const std::string & filename)
-{
-    LoadMatrices(filename);
-}
+//Learner::Learner(const Fsa& fsa)
+//:   common_support(0.0), plogp(0.0), kl(0.0),
+//    unique_path(false)
+//{
+//    BuildConstraints(fsa); 
+//}
+//
+//Learner::Learner(const std::string& filename)
+//{
+//    LoadMatrices(filename);
+//}
 
 Learner::~Learner()
 {
-}
-
-void Learner::BuildPaths(const Fsa& fsa, const Corpus& corpus, bool bfs)
-{
-    BuildStructureMtx(fsa, corpus, bfs);
-    AssignConstants();
-
-    BuildPathsCallback();
 }
 
 void Learner::Renormalize()
 {
     const MKL_INT n = GetNumberOfParameters();
     const MKL_INT k = GetNumberOfConstraints();
-    double alpha = 1.0, beta = 0.0;
+
     aux.resize(n + k);
     double* y = aux.data();
     double* g = aux.data() + n;
+
     // y <- exp(x)
     vdExp(n, _x.data(), y);
-    // g <- C^t.exp(x)
-    mkl_dcsrmv("t", &n, &k, &alpha, "GxxCx",
-        ones.data(), Ccol.data(), Crow.data(), Crow.data() + 1,
-        y, &beta, g);
+    
+    // g <- C^t.y
+    C.dot(y, g, SPARSE_OPERATION_TRANSPOSE);
+    
     // g <- log(C^t.exp(x))
     vdLn(k, g, g);
 
     // x -= C.g
-    alpha = -1.0;
-    beta = 1.0;
-    mkl_dcsrmv("n", &n, &k, &alpha, "GxxCx",
-        ones.data(), Ccol.data(), Crow.data(), Crow.data() + 1,
-        g, &beta, _x.data());
+    C.dot(g, _x.data(), SPARSE_OPERATION_NON_TRANSPOSE, -1.0, 1.0);
 }
 
-void Learner::PrintJ(std::ostream & os)const 
+void Learner::PrintJ(FILE* f)const 
 {
     //vdExp(_x.size(), _x.data(), _x.data());
-    PrintCsrMtx(os, _x, Crow, Ccol);
+    PrintCsrMtx(f, _x, Crow, Ccol);
     //vdLn(_x.size(), _x.data(), _x.data());
 }
 
-void Learner::PrintC(std::ostream & os)const
+void Learner::PrintC(FILE* f)const
 {
-    PrintCsrMtx(os, ones, Crow, Ccol);
+    PrintCsrMtx(f, ones, Crow, Ccol);
 }
 
-void Learner::PrintP(std::ostream & os) const
+void Learner::PrintP(FILE* f) const
 {
-    PrintCsrMtx(os, Pdata, Prow, Pcol);
+    PrintCsrMtx(f, Pdata, Prow, Pcol);
 }
 
-void Learner::PrintM(std::ostream & os)const
+void Learner::PrintM(FILE* f)const
 {
-    PrintCsrMtx(os, ones, Mrow, Mcol);
+    PrintCsrMtx(f, ones, Mrow, Mcol);
 }
 
-bool Learner::SaveMatrices(const std::string filename) const
+bool Learner::SaveMatrices(const std::string& filename) const
 {
     std::ofstream ofs(filename + ".C");
     ofs.precision(DBL_DIG);
@@ -140,7 +129,7 @@ bool Learner::SaveMatrices(const std::string filename) const
     return true;
 }
 
-bool Learner::LoadMatrices(const std::string filename)
+bool Learner::LoadMatrices(const std::string& filename)
 {
     std::ifstream ifs(filename + ".C");
     if (ifs)
@@ -202,11 +191,27 @@ bool Learner::LoadMatrices(const std::string filename)
     _x.assign(GetNumberOfParameters(), 0.0);
     unique_path = GetNumberOfStrings() == GetNumberOfPaths();
 
-    AssignConstants();
-    
-    BuildPathsCallback();
-
     return true;
+}
+
+std::vector<double> Learner::GetOptimizationInfo()
+{
+    return std::vector<double>();
+}
+
+std::string Learner::GetOptimizationHeader()
+{
+    return std::string();
+}
+
+std::vector<double> Learner::GetOptimizationResult(bool)
+{
+    return std::vector<double>();
+}
+
+bool Learner::HaltCondition(double)
+{
+    return false;
 }
 
 template<class Indexed>
@@ -255,9 +260,14 @@ void Learner::BuildConstraints(const Fsa& fsa)
 }
 
 typedef std::vector<std::pair<MKL_INT, double>> Path;
-// typedef std::map<MKL_INT, double> Path;
 
-void Learner::BuildStructureMtx(const Fsa& fsa, const Corpus& corpus, bool bfs)
+void Learner::BuildFrom(const Fsa& fsa, const Corpus& corpus, bool bfs)
+{
+    BuildConstraints(fsa);
+    BuildPaths(fsa, corpus, bfs);
+}
+
+void Learner::BuildPaths(const Fsa& fsa, const Corpus& corpus, bool bfs)
 {
     auxiliary_parameters = 0;
     const auto& startState = fsa.GetTransitionMtx().at(fsa.GetStartState());
@@ -330,7 +340,9 @@ void Learner::BuildStructureMtx(const Fsa& fsa, const Corpus& corpus, bool bfs)
     Prow.emplace_back(Pcol.size());
 }
 
-void Learner::AssignConstants()
+void Learner::FinalizeCallback() {}
+
+void Learner::Finalize()
 {
     aux.resize(GetNumberOfStrings());
 
@@ -346,6 +358,12 @@ void Learner::AssignConstants()
         relative_path_probs.resize(GetNumberOfPaths());
     else
         relative_path_probs.clear();
+
+    M.Init(GetNumberOfStrings(), GetNumberOfPaths(), Mrow.data(), Mcol.data(), ones.data());
+    P.Init(GetNumberOfPaths(), GetNumberOfParameters(), Prow.data(), Pcol.data(), Pdata.data());
+    C.Init(GetNumberOfParameters(), GetNumberOfConstraints(), Crow.data(), Ccol.data(), ones.data());
+
+    FinalizeCallback();
 }
 
 double Learner::LogAuxiliaryVolume() const
@@ -375,18 +393,11 @@ size_t Learner::GetNumberOfAuxParameters() const
 
 void Learner::ComputeModeledProbs()
 {
-    MKL_INT row, col;
-    double alpha = 1.0, beta = 0.0;
-
     if (unique_path)
     {   // relative_path_probs holds nothing in this case!
 
         // logq = P.x
-        row = GetNumberOfPaths();
-        col = GetNumberOfParameters();
-        mkl_dcsrmv("n", &row, &col, &alpha, "GxxCx",
-            Pdata.data(), Pcol.data(), Prow.data(), Prow.data() + 1,
-            _x.data(), &beta, logq.data());
+        P.dot(_x.data(), logq.data());
 
         // q = exp(P.x)
         vdExp(logq.size(), logq.data(), q.data());
@@ -395,29 +406,19 @@ void Learner::ComputeModeledProbs()
         aux.resize(GetNumberOfPaths());
 
         // relative_path_probs = P.x
-        row = GetNumberOfPaths();
-        col = GetNumberOfParameters();
-        mkl_dcsrmv("n", &row, &col, &alpha, "GxxCx",
-            Pdata.data(), Pcol.data(), Prow.data(), Prow.data() + 1,
-            _x.data(), &beta, relative_path_probs.data());
+        P.dot(_x.data(), relative_path_probs.data());
 
         // relative_path_probs = exp(P.x)
-        vdExp(row, relative_path_probs.data(), relative_path_probs.data());
+        vdExp(GetNumberOfPaths(), relative_path_probs.data(), relative_path_probs.data());
 
         // q = M.relative_path_probs
-        col = row;
-        row = q.size();
-        mkl_dcsrmv("n", &row, &col, &alpha, "GxxCx",
-            ones.data(), Mcol.data(), Mrow.data(), Mrow.data() + 1,
-            relative_path_probs.data(), &beta, q.data());
+        M.dot(relative_path_probs.data(), q.data());
 
         // logq = log(q)
         vdLn(q.size(), q.data(), logq.data());
 
         // aux <- M^t.q
-        mkl_dcsrmv("t", &row, &col, &alpha, "GxxCx",
-            ones.data(), Mcol.data(), Mrow.data(), Mrow.data() + 1,
-            q.data(), &beta, aux.data());
+        M.dot(q.data(), aux.data(), SPARSE_OPERATION_TRANSPOSE);
 
         // relative_path_probs /= M^t.q
         vdDiv(GetNumberOfPaths(), relative_path_probs.data(), aux.data(), relative_path_probs.data());
@@ -427,7 +428,7 @@ void Learner::ComputeModeledProbs()
 void Learner::ComputeObjective()
 {
     // q.1
-    modeled_prob = cblas_ddot(GetNumberOfStrings(), q.data(), 1, ones.data(), 1);
+    // modeled_prob = cblas_ddot(GetNumberOfStrings(), q.data(), 1, ones.data(), 1);
     // p.log(p) - p.log(q)
     kl = plogp - cblas_ddot(GetNumberOfStrings(), p.data(), 1, logq.data(), 1);
 }
@@ -446,14 +447,14 @@ double Learner::GetCommonSupport() const
     return common_support;
 }
 
-double Learner::GetTotalModeledProb() const
-{
-    return modeled_prob;
-}
+//double Learner::GetTotalModeledProb() const
+//{
+//    return modeled_prob;
+//}
 
 double Learner::gKLDistance() const
 {
-    return GetKLDistance() - common_support * std::log(common_support);
+    return GetKLDistance() + mxlogx(common_support);
 }
 
 void Learner::Init(int flags, const double* initialx)
@@ -464,11 +465,6 @@ void Learner::Init(int flags, const double* initialx)
 }
 
 void Learner::InitCallback(int)
-{
-}
-
-
-void Learner::BuildPathsCallback()
 {
 }
 

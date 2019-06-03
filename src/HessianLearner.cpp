@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <iterator>
+#include <iostream>
 
 HessianLearner::HessianLearner()
     : Learner(), solver(MKL_DSS_ZERO_BASED_INDEXING +
@@ -14,38 +15,26 @@ HessianLearner::HessianLearner()
 {
 }
 
-HessianLearner::HessianLearner(const Fsa & fsa)
-:   Learner(fsa), solver(MKL_DSS_ZERO_BASED_INDEXING +
-        MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR + MKL_DSS_REFINEMENT_ON),
-        include_Hf(false)
-{
-}
-
-HessianLearner::HessianLearner(const std::string & filename)
-    : Learner(filename), solver(MKL_DSS_ZERO_BASED_INDEXING +
-        MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR + MKL_DSS_REFINEMENT_ON),
-        include_Hf(false)
-{
-}
-
-void HessianLearner::BuildPathsCallback()
+void HessianLearner::FinalizeCallback()
 {
     rhs.resize(GetNumberOfAugmentedParameters());
     _x.resize(GetNumberOfAugmentedParameters(), 1.0);
     expx.resize(GetNumberOfParameters());
+
+    Jg.Init(GetNumberOfParameters(), GetNumberOfConstraints(), Crow.data(), Ccol.data(), expx.data());
 }
 
 void HessianLearner::InitDss(bool reorder)
 {
     const MKL_INT rows = GetNumberOfAugmentedParameters();
     const MKL_INT cols = GetNumberOfAugmentedParameters(), nnz = H.size();
-    MKL_INT error;
+    MKL_INT status;
     solver_opt = MKL_DSS_SYMMETRIC;
     auto solver_handle = solver.GetHandler();
 
-    if ((error = dss_define_structure(solver_handle, solver_opt, Hrow.data(), rows, cols, Hcol.data(), nnz)) != MKL_DSS_SUCCESS)
+    if ((status = dss_define_structure(solver_handle, solver_opt, Hrow.data(), rows, cols, Hcol.data(), nnz)) != MKL_DSS_SUCCESS)
     {
-        throw LearnerError("Unable to define structure! Error code: ", error);
+        throw LearnerError("Unable to define structure! Error code: ", status);
     }
     solver_opt = reorder ? MKL_DSS_GET_ORDER : MKL_DSS_MY_ORDER;
     perm.resize(rows);
@@ -54,9 +43,9 @@ void HessianLearner::InitDss(bool reorder)
         for (MKL_INT i = 0; i < rows; ++i)
             perm[i] = i;
     }
-    if ((error = dss_reorder(solver_handle, solver_opt, perm.data())) != MKL_DSS_SUCCESS)
+    if ((status = dss_reorder(solver_handle, solver_opt, perm.data())) != MKL_DSS_SUCCESS)
     {
-        throw LearnerError("Unable to find reorder! Error code: ", error);
+        throw LearnerError("Unable to find reorder! Error code: ", status);
     }
 }
 
@@ -64,7 +53,7 @@ HessianLearner::~HessianLearner()
 {
 }
 
-void HessianLearner::OptimizationStep(double eta)
+void HessianLearner::OptimizationStep(double eta, bool verbose)
 {
     aux.resize(GetNumberOfAugmentedParameters());
 
@@ -79,35 +68,27 @@ void HessianLearner::OptimizationStep(double eta)
 
     ComputeHg();
     
+    if (verbose)
+    {
+        fputs("H:\n", stderr);
+        PrintEq(stderr);
+    }
+
     // sol = H \ rhs
-    MKL_INT nRhs = 1, error;
+    MKL_INT nRhs = 1, status;
     solver_opt = MKL_DSS_INDEFINITE;
     auto solver_handle = solver.GetHandler();
-    if ((error = dss_factor_real(solver_handle, solver_opt, H.data())) != MKL_DSS_SUCCESS)
+    if ((status = dss_factor_real(solver_handle, solver_opt, H.data())) != MKL_DSS_SUCCESS)
     {
-        throw LearnerError("Unable to factor coefficient matrix! Error code: ", error);
+        throw LearnerError("Unable to factor coefficient matrix! Error code: ", status);
     }
 
     solver_opt = MKL_DSS_REFINEMENT_ON;
-    if ((error = dss_solve_real(solver_handle, solver_opt, rhs.data(), nRhs, aux.data())) != MKL_DSS_SUCCESS)
+    if ((status = dss_solve_real(solver_handle, solver_opt, rhs.data(), nRhs, aux.data())) != MKL_DSS_SUCCESS)
     {
-        throw LearnerError("Unable to solve equation! Error code: ", error);
+        throw LearnerError("Unable to solve equation! Error code: ", status);
     }
     cblas_daxpy(aux.size(), -eta, aux.data(), 1, _x.data(), 1);
-}
-
-void HessianLearner::GetInertia(std::ostream & os)
-{
-    MKL_INT error;
-    solver_opt = MKL_DSS_DEFAULTS;
-    double ret_values[3];
-    auto solver_handle = solver.GetHandler();
-
-    if ((error = dss_statistics(solver_handle, solver_opt, "Inertia", ret_values)) != MKL_DSS_SUCCESS)
-    {
-        throw LearnerError("Unable to get inertia! Error code: ", error);
-    }
-    os << '+' << size_t(ret_values[0]) << " -" << size_t(ret_values[1]) << " 0" << size_t(ret_values[2]) << std::endl;
 }
 
 void HessianLearner::InitCallback(int flags)
@@ -225,14 +206,70 @@ double HessianLearner::ComputeLogDetHessian()
     return RealSymmetricLogDet(Hrow.data(), n, Hcol.data(), nnz, H.data(), false);
 }
 
-void HessianLearner::PrintH(std::ostream & os) const
+void HessianLearner::PrintH(FILE* f) const
 {
-    PrintCsrMtx(os, H, Hrow, Hcol);
+    PrintCsrMtx(f, H, Hrow, Hcol);
 }
 
-void HessianLearner::PrintEq(std::ostream & os) const
+void HessianLearner::PrintEq(FILE* f) const
 {
-    PrintCsrMtx(os, H, Hrow, Hcol, rhs);
+    PrintCsrMtx(f, H, Hrow, Hcol, rhs);
+}
+
+std::vector<double> HessianLearner::GetOptimizationInfo()
+{
+    std::vector<double> result(6);
+    result[0] = GetKLDistance();
+
+    result[1] = GradientError();
+    result[2] = DeNormalizedFactor();
+    error = std::max(result[1], result[2]);
+
+    MKL_INT status;
+    solver_opt = MKL_DSS_DEFAULTS;
+    double* ret_values = result.data() + 3;
+    auto solver_handle = solver.GetHandler();
+
+    if ((status = dss_statistics(solver_handle, solver_opt, "Inertia", ret_values)) != MKL_DSS_SUCCESS)
+    {
+        throw LearnerError("Unable to get inertia! Error code: ", status);
+    }
+    return result;
+}
+
+std::vector<double> HessianLearner::GetOptimizationResult(bool verbose)
+{
+    ComputeModeledProbs();
+    ComputeObjective();
+
+    const auto logdetHessian = ComputeLogDetHessian();
+
+    std::cerr << "Hessian:\n\trows: " << GetNumberOfParameters() <<
+        "\n\tnnz: " << GetNnzHessian() <<
+        "\n\tfill: " << GetHessianFillRatio() << std::endl;
+    if (verbose)
+        PrintH(stderr);
+    
+    return std::vector<double>({
+        GetKLDistance(),
+        mxlogx(GetCommonSupport()),
+        LogModelVolume(),
+        LogAuxiliaryVolume(),
+        logdetHessian,
+        LogDetAuxiliaryHessian(),
+        (double)(GetNumberOfParameters() - GetNumberOfConstraints()),
+        (double)std::max<MKL_INT>(0, GetNumberOfAuxParameters() - 1)
+        });
+}
+
+std::string HessianLearner::GetOptimizationHeader()
+{
+    return "KL\tgraderr\tnormerr\t   +\t   -\t   0";
+}
+
+bool HessianLearner::HaltCondition(double tol)
+{
+    return error <= tol;
 }
 
 void HessianLearner::AssembleH(bool Hf)
@@ -411,7 +448,6 @@ void HessianLearner::ComputeExpX()
 
 void HessianLearner::InitSlackVariables()
 {
-    double alpha = 1.0, beta = 0.0;
     const MKL_INT n = GetNumberOfParameters(), k = GetNumberOfConstraints();
     std::vector<double> sumexp2x(k);
     // this is going to contain the pseudo inverse of J
@@ -432,52 +468,32 @@ void HessianLearner::InitSlackVariables()
     }
     {
         // sumexp2x <- C^t.PInvJ
-        mkl_dcsrmv("t", &n, &k, &alpha, "GxxCx",
-            ones.data(), Ccol.data(), Crow.data(), Crow.data() + 1,
-            PInvJ.data(), &beta, sumexp2x.data());
+        C.dot(PInvJ.data(), sumexp2x.data(), SPARSE_OPERATION_TRANSPOSE);
+
         // PInvJ <- C*sumexp2x
-        mkl_dcsrmv("n", &n, &k, &alpha, "GxxCx",
-            ones.data(), Ccol.data(), Crow.data(), Crow.data() + 1,
-            sumexp2x.data(), &beta, PInvJ.data());
+        C.dot(sumexp2x.data(), PInvJ.data(), SPARSE_OPERATION_NON_TRANSPOSE);
     }
     // PInvJ <- exp(x) / PInvJ
     vdDiv(n, expx.data(), PInvJ.data(), PInvJ.data());
 
     // -PInvJ.gradf
-    alpha = -1.0; beta = 0.0;
-    mkl_dcsrmv("t", &n, &k, &alpha, "GxxCx",
-        PInvJ.data(), Ccol.data(), Crow.data(), Crow.data() + 1,
-        rhs.data(), &beta, _x.data() + n);
+    SparseMtxHandle PInv_mat(n, k, Crow.data(), Ccol.data(), PInvJ.data());
+    PInv_mat.dot(rhs.data(), _x.data() + n, SPARSE_OPERATION_TRANSPOSE, -1.0, 0.0);
 }
 
 void HessianLearner::ComputeGrad()
 {
-    MKL_INT row, col;
-    double alpha, beta;
-
     if (grad_aux.empty())
     {   // initialize
         if (unique_path)
         {   // gradient is constant: -P^t.p
             grad_aux.resize(GetNumberOfParameters());
-            row = GetNumberOfPaths(); // equal the number of strings
-            col = GetNumberOfParameters();
-            alpha = -1.0; beta = 0.0;
-            mkl_dcsrmv("t", &row, &col, &alpha, "GxxCx",
-                Pdata.data(), Pcol.data(), Prow.data(), Prow.data() + 1,
-                p.data(), &beta, grad_aux.data());
+            P.dot(p.data(), grad_aux.data(), SPARSE_OPERATION_TRANSPOSE, -1.0, 0.0);
         }
         else
         {   // a useful quantity is precomputed: -M^t.p
             grad_aux.resize(GetNumberOfPaths());
-
-            row = GetNumberOfStrings();
-            col = GetNumberOfPaths();
-            alpha = -1.0; beta = 0.0;
-
-            mkl_dcsrmv("t", &row, &col, &alpha, "GxxCx",
-                ones.data(), Mcol.data(), Mrow.data(), Mrow.data() + 1,
-                p.data(), &beta, grad_aux.data());
+            M.dot(p.data(), grad_aux.data(), SPARSE_OPERATION_TRANSPOSE, -1.0, 0.0);
         }
     }
 
@@ -495,12 +511,7 @@ void HessianLearner::ComputeGrad()
         vdMul(GetNumberOfPaths(), relative_path_probs.data(), grad_aux.data(), aux.data());
 
         // rhs <- P^t.aux
-        row = GetNumberOfPaths();
-        col = GetNumberOfParameters();
-        alpha = 1.0; beta = 0.0;
-        mkl_dcsrmv("t", &row, &col, &alpha, "GxxCx",
-            Pdata.data(), Pcol.data(), Prow.data(), Prow.data() + 1,
-            aux.data(), &beta, rhs.data());
+        P.dot(aux.data(), rhs.data(), SPARSE_OPERATION_TRANSPOSE);
     }
 }
 
@@ -508,11 +519,9 @@ void HessianLearner::ComputeG()
 {
     const MKL_INT n = GetNumberOfParameters();
     const MKL_INT k = GetNumberOfConstraints();
-    double alpha = 1.0, beta = 0.0;
     // g <- C^t.exp(x)
-    mkl_dcsrmv("t", &n, &k, &alpha, "GxxCx",
-        ones.data(), Ccol.data(), Crow.data(), Crow.data() + 1,
-        expx.data(), &beta, rhs.data() + n);
+    C.dot(expx.data(), rhs.data() + n, SPARSE_OPERATION_TRANSPOSE);
+    
     // g -= 1
     cblas_daxpy(k, -1.0, ones.data(), 1, rhs.data() + n, 1);
 }
@@ -525,11 +534,8 @@ void HessianLearner::ComputeRhs()
 
     // J_g.l = expx[C].lambda
     // rhs[:n] += J_g.l
-    const MKL_INT n = GetNumberOfParameters(), k = GetNumberOfConstraints();
-    double alpha = 1.0, beta = 1.0;
-    mkl_dcsrmv("n", &n, &k, &alpha, "GxxCx",
-        expx.data(), Ccol.data(), Crow.data(), Crow.data() + 1,
-        _x.data() + n, &beta, rhs.data());
+    const auto n = GetNumberOfParameters();
+    Jg.dot(_x.data() + n, rhs.data(), SPARSE_OPERATION_NON_TRANSPOSE, 1.0, 1.0);
 }
 
 void HessianLearner::ComputeHg()

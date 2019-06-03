@@ -81,19 +81,14 @@ std::pair<const char*, char> GetWord(char*& input, const char* separator)
 
 void PrintFixedWidth(FILE * out, double x, int width)
 {
-    fprintf(out, "%*.*e", width, std::max(0, width - 7), x);
-    //static char fmt[10];
-    //snprintf(fmt, 9, "%%-%d.*g", width);
-    //if (x == 0)
-    //    fprintf(out, "%g", x);
-    //else
-    //{
-    //    const double d = floor(abs(log10(abs(x))));
-    //    if (x < 0)
-    //        fprintf(out, fmt, std::max(std::min(width - 3 - (int)d, width - 3), 0), x);
-    //    else
-    //        fprintf(out, fmt, std::max(std::min(width - 2 - (int)d, width - 2), 0), x);
-    //}
+    // GO TO HELL
+    const int magnitude = (x == 0) ? 0 : (int)std::floor(std::log10(std::abs(x)));
+    if (magnitude <= width - 2 && magnitude >= 0)
+        fprintf(out, "%*.*f", width, std::max(0, width - 3 - magnitude), x);
+    else if (-4 < magnitude && magnitude < 0)
+        fprintf(out, "%*.*f", width, width - 3, x);
+    else
+        fprintf(out, "%*.*e", width, width - 7, x);
 }
 
 bool IsEmpty(const char * s)
@@ -130,7 +125,7 @@ bool ReadContent(FILE * input, std::vector<char>& content)
     return true;
 }
 
-void PrintCooMtx(std::ostream & os,
+void PrintCooMtx(std::ostream& os,
     const std::vector<double>& data,
     const std::vector<MKL_INT>& rows,
     const std::vector<MKL_INT>& cols)
@@ -154,33 +149,31 @@ void PrintCooMtx(std::ostream & os,
     os.unsetf(std::ios::fixed);
 }
 
-void PrintCsrMtx(std::ostream & os, const std::vector<double>& data,
+void PrintCsrMtx(FILE* f, const std::vector<double>& data,
     const std::vector<MKL_INT>& rows, const std::vector<MKL_INT>& cols,
     const std::vector<double>& rhs)
 {
     const MKL_INT width = rows.size() - 1;
     MKL_INT prev;
-    os.setf(std::ios::fixed);
-    const auto oldprec = os.precision(4);
     for (size_t i = 0; i < rows.size()-1; ++i)
     {
         prev = -1;
         for (MKL_INT j = rows[i]; j < rows[i + 1]; ++j)
         {
-            for (; prev < cols[j]-1; ++prev) os << "       ";
+            for (; prev < cols[j]-1; ++prev) fputs("        ", f);
             
             prev = cols[j];
-            os << data[j] << ' ';
+            PrintFixedWidth(f, data[j], 7);
+            fputs(" ", f);
         }
         if (rhs.size() > i)
         {
-            for (; prev < width -1 ; ++prev) os << "       ";
-            os << '|' << rhs[i];
+            for (; prev < width -1 ; ++prev) fputs("        ", f);
+            fputs("|", f);
+            PrintFixedWidth(f, rhs[i], 7);
         }
-        os << "\n";
+        fputs("\n", f);
     }
-    os.precision(oldprec);
-    os.unsetf(std::ios::fixed);
 }
 
 void ReadCsrMtx(std::istream & is, std::vector<double>& data, std::vector<MKL_INT>& rows, std::vector<MKL_INT>& cols)
@@ -381,4 +374,40 @@ DssSolverHandler::~DssSolverHandler()
 void* DssSolverHandler::GetHandler() const
 {
     return solver_handler;
+}
+
+SparseMtxHandle::SparseMtxHandle()
+{
+    desc.type = SPARSE_MATRIX_TYPE_GENERAL;
+}
+
+SparseMtxHandle::SparseMtxHandle(MKL_INT n, MKL_INT k, MKL_INT * rows, MKL_INT * cols, double * x)
+{
+    desc.type = SPARSE_MATRIX_TYPE_GENERAL;
+    Init(n, k, rows, cols, x);
+}
+
+void SparseMtxHandle::Init(MKL_INT n, MKL_INT k, MKL_INT * rows, MKL_INT * cols, double * x)
+{
+    auto status = mkl_sparse_d_create_csr(&A, SPARSE_INDEX_BASE_ZERO, n, k, rows, rows + 1, cols, x);
+    if (SPARSE_STATUS_SUCCESS != status)
+    {
+        A = nullptr;
+        throw MyError("mkl_sparse_d_create_csr failed with ", status);
+    }
+}
+
+SparseMtxHandle::~SparseMtxHandle()
+{
+    if (A)
+        mkl_sparse_destroy(A);
+}
+
+void SparseMtxHandle::dot(const double * x, double * y, sparse_operation_t op, double alpha, double beta) const
+{
+    auto status = mkl_sparse_d_mv(op, alpha, A, desc, x, beta, y);
+    if (status != SPARSE_STATUS_SUCCESS)
+    {
+        throw MyError("mkl_sparse_d_mv failed with ", status);
+    }
 }

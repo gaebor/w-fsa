@@ -25,17 +25,13 @@ class HessianLearner : public Learner
 {
 public:
     HessianLearner();
-    HessianLearner(const Fsa& fsa);
-    HessianLearner(const std::string& filename);
 
     virtual ~HessianLearner();
 
     //! fills _x[n:]
     void InitSlackVariables();
 
-    virtual void OptimizationStep(double eta = 1.0);
-
-    void GetInertia(std::ostream& os);
+    virtual void OptimizationStep(double eta = 1.0, bool verbose = false);
 
     size_t GetNumberOfAugmentedParameters()const;
 
@@ -49,10 +45,14 @@ public:
 
     double ComputeLogDetHessian();
 
-    void PrintH(std::ostream& os)const;
-    void PrintEq(std::ostream& os)const;
+    void PrintH(FILE* f)const;
+    void PrintEq(FILE* f)const;
+    virtual std::vector<double> GetOptimizationInfo();
+    virtual std::vector<double> GetOptimizationResult(bool verbose=false);
+    virtual std::string GetOptimizationHeader();
+    virtual bool HaltCondition(double tol);
 protected:
-    virtual void BuildPathsCallback();
+    virtual void FinalizeCallback();
     virtual void InitCallback(int flags);
 
 private:
@@ -63,8 +63,8 @@ private:
 
     //! exp(x)
     void ComputeExpX();
-    //! J<sub>g</sub>.lambda
-    void ComputeJgL();
+    ////! J<sub>g</sub>.lambda
+    //void ComputeJgL();
 
     //! rhs <- [grad f + J_g.lambda, g]
     /*!
@@ -157,9 +157,12 @@ private:
     void ComputeG();
 
     std::vector<double> rhs, H, expx, grad_aux;
+    SparseMtxHandle Jg;
+
     std::vector<MKL_INT> Hrow, Hcol;
     std::vector<MKL_INT> perm;
     DssSolverHandler solver;
     MKL_INT solver_opt;
+    double error;
     bool include_Hf;
 };
