@@ -59,7 +59,7 @@ public:
     size_t GetNumberOfConstraints()const;
 
     bool HasUniquePaths()const;
-
+     
     double GetKLDistance()const;
     double gKLDistance()const;
 

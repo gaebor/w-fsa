@@ -240,6 +240,7 @@ void Collect(MKL_INT& k, double& model_volume,
 
 void Learner::BuildConstraints(const Fsa& fsa)
 {
+    //TODO orthogonal basis for constraints!
     model_volume = 0;
     Crow.clear(); Ccol.clear();
 

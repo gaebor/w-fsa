@@ -264,7 +264,7 @@ std::vector<double> HessianLearner::GetOptimizationResult(bool verbose)
 
 std::string HessianLearner::GetOptimizationHeader()
 {
-    return "KL\tgraderr\tnormerr\t   +\t   -\t   0";
+    return "KL        graderr   normerr           +         -         0";
 }
 
 bool HessianLearner::HaltCondition(double tol)
@@ -406,7 +406,7 @@ void HessianLearner::ComputeHf()
         for (auto l = Mrow[str_idx]; l < Mrow[str_idx + 1]; ++l)
         {
             auto pl = Prow[l];
-            MKL_INT j = 0;
+            size_t j = 0;
             while (j < equivocal_indexes.size() && pl < Prow[l + 1])
             {
                 // https://stackoverflow.com/a/4609795/3583290
@@ -422,9 +422,9 @@ void HessianLearner::ComputeHf()
             }
         }
 
-        for (MKL_INT j = 0; j < equivocal_indexes.size(); ++j)
+        for (size_t j = 0; j < equivocal_indexes.size(); ++j)
         {
-            for (MKL_INT k = j; k < equivocal_indexes.size(); ++k)
+            for (size_t k = j; k < equivocal_indexes.size(); ++k)
             {
                 double Hjk = 0.0;
                 for (auto l = Mrow[str_idx]; l < Mrow[str_idx + 1]; ++l)
@@ -448,6 +448,7 @@ void HessianLearner::ComputeExpX()
 
 void HessianLearner::InitSlackVariables()
 {
+    //TODO this is not good, try other initialization
     const MKL_INT n = GetNumberOfParameters(), k = GetNumberOfConstraints();
     std::vector<double> sumexp2x(k);
     // this is going to contain the pseudo inverse of J
