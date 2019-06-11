@@ -219,7 +219,7 @@ void Fsa::AssignIndices()
         } else
         {   // equivocal
             for (auto& e : emissions)
-                e.index = n++;
+                e.index = (MKL_INT)(n++);
         }
 
         if (transitions.size() == 1)
@@ -229,7 +229,7 @@ void Fsa::AssignIndices()
         else
         {   // equivocal
             for (auto& t : transitions)
-                t.index = n++;
+                t.index = (MKL_INT)(n++);
         }
 
         m1 += transitions.size();

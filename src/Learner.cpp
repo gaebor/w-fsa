@@ -228,7 +228,7 @@ void Collect(MKL_INT& k, double& model_volume,
             if (next.index != (MKL_INT)Ccol.size())
                 throw LearnerError("Indexing error: ", next.index, " != ", Ccol.size());
 
-            Crow.emplace_back(Ccol.size());
+            Crow.push_back(Ccol.size());
             Ccol.emplace_back(k);
             _x[next.index] = next.logprob;
         }
@@ -257,7 +257,7 @@ void Learner::BuildConstraints(const Fsa& fsa)
         Collect(k, model_volume, _x, Crow, Ccol, emissions);
         Collect(k, model_volume, _x, Crow, Ccol, transitions);
     }
-    Crow.emplace_back(Ccol.size());
+    Crow.push_back(Ccol.size());
 }
 
 typedef std::vector<std::pair<MKL_INT, double>> Path;
@@ -289,20 +289,20 @@ void Learner::BuildPaths(const Fsa& fsa, const Corpus& corpus, bool bfs)
     {
         if (!has_path) // first recognition of this word
         {
-            Mrow.emplace_back(Mcol.size());
+            Mrow.push_back(Mcol.size());
             common_support += wordIt->second;
             p.emplace_back(wordIt->second);
         }
         has_path = true;
 
-        Prow.emplace_back(Pcol.size());
+        Prow.push_back(Pcol.size());
         for (const auto& variable : path)
         {
             Pdata.emplace_back(variable.second);
             Pcol.emplace_back(variable.first);
         }
 
-        Mcol.emplace_back(Mcol.size());        
+        Mcol.push_back(Mcol.size());        
     });
     Recognizer<Path> recognizer(fsa.GetEndState(), accumulator, resultHandler);
     auto recognize = bfs ? &Recognizer<Path>::RecognizeBFS : &Recognizer<Path>::RecognizeDFS;
@@ -337,8 +337,8 @@ void Learner::BuildPaths(const Fsa& fsa, const Corpus& corpus, bool bfs)
     if (Mcol.size() == Mrow.size())
         unique_path = true;
 
-    Mrow.emplace_back(Mcol.size());
-    Prow.emplace_back(Pcol.size());
+    Mrow.push_back(Mcol.size());
+    Prow.push_back(Pcol.size());
 }
 
 void Learner::FinalizeCallback() {}
@@ -350,7 +350,7 @@ void Learner::Finalize()
     ones.assign(std::max(GetNumberOfPaths(), GetNumberOfParameters()), 1.0);
 
     vdLn(GetNumberOfStrings(), p.data(), aux.data());
-    plogp = cblas_ddot(p.size(), p.data(), 1, aux.data(), 1);
+    plogp = cblas_ddot(GetNumberOfStrings(), p.data(), 1, aux.data(), 1);
 
     q.resize(GetNumberOfStrings());
     logq.resize(GetNumberOfStrings());
@@ -387,9 +387,9 @@ double Learner::LogDetAuxiliaryHessian() const
     return aux_hessian;
 }
 
-size_t Learner::GetNumberOfAuxParameters() const
+MKL_INT Learner::GetNumberOfAuxParameters() const
 {
-    return auxiliary_parameters;
+    return (MKL_INT)auxiliary_parameters;
 }
 
 void Learner::ComputeModeledProbs()
@@ -401,7 +401,7 @@ void Learner::ComputeModeledProbs()
         P.dot(_x.data(), logq.data());
 
         // q = exp(P.x)
-        vdExp(logq.size(), logq.data(), q.data());
+        vdExp(GetNumberOfStrings(), logq.data(), q.data());
     }else
     {
         aux.resize(GetNumberOfPaths());
@@ -416,7 +416,7 @@ void Learner::ComputeModeledProbs()
         M.dot(relative_path_probs.data(), q.data());
 
         // logq = log(q)
-        vdLn(q.size(), q.data(), logq.data());
+        vdLn(GetNumberOfStrings(), q.data(), logq.data());
 
         // aux <- M^t.q
         M.dot(q.data(), aux.data(), SPARSE_OPERATION_TRANSPOSE);
@@ -434,14 +434,14 @@ void Learner::ComputeObjective()
     kl = plogp - cblas_ddot(GetNumberOfStrings(), p.data(), 1, logq.data(), 1);
 }
 
-size_t Learner::GetNumberOfStrings() const
+MKL_INT Learner::GetNumberOfStrings() const
 {
-    return p.size();
+    return (MKL_INT)p.size();
 }
 
-size_t Learner::GetNumberOfPaths() const { return Mcol.size(); }
-size_t Learner::GetNumberOfParameters() const { return Ccol.size(); }
-size_t Learner::GetNumberOfConstraints() const { return Ccol.empty() ? 0 : Ccol.back() + 1; }
+MKL_INT Learner::GetNumberOfPaths() const { return (MKL_INT)Mcol.size(); }
+MKL_INT Learner::GetNumberOfParameters() const { return (MKL_INT)Ccol.size(); }
+MKL_INT Learner::GetNumberOfConstraints() const { return Ccol.empty() ? (MKL_INT)0 : Ccol.back() + 1; }
 
 double Learner::GetCommonSupport() const
 {

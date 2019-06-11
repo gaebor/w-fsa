@@ -27,7 +27,8 @@ void HessianLearner::FinalizeCallback()
 void HessianLearner::InitDss(bool reorder)
 {
     const MKL_INT rows = GetNumberOfAugmentedParameters();
-    const MKL_INT cols = GetNumberOfAugmentedParameters(), nnz = H.size();
+    const MKL_INT cols = GetNumberOfAugmentedParameters();
+    const MKL_INT nnz = GetNnzHessian();
     MKL_INT status;
     solver_opt = MKL_DSS_SYMMETRIC;
     auto solver_handle = solver.GetHandler();
@@ -61,7 +62,7 @@ void HessianLearner::OptimizationStep(double eta, bool verbose)
     ComputeObjective();
     
     // H = 0
-    cblas_dscal(H.size(), 0.0, H.data(), 1);
+    cblas_dscal(GetNnzHessian(), 0.0, H.data(), 1);
 
     if (include_Hf)
         ComputeHf();
@@ -88,7 +89,7 @@ void HessianLearner::OptimizationStep(double eta, bool verbose)
     {
         throw LearnerError("Unable to solve equation! Error code: ", status);
     }
-    cblas_daxpy(aux.size(), -eta, aux.data(), 1, _x.data(), 1);
+    cblas_daxpy(GetNumberOfAugmentedParameters(), -eta, aux.data(), 1, _x.data(), 1);
 }
 
 void HessianLearner::InitCallback(int flags)
@@ -137,7 +138,7 @@ void HessianLearner::InitCallback(int flags)
     });
 }
 
-size_t HessianLearner::GetNumberOfAugmentedParameters() const
+MKL_INT HessianLearner::GetNumberOfAugmentedParameters() const
 {
     return GetNumberOfParameters() + GetNumberOfConstraints();
 }
@@ -153,9 +154,9 @@ double HessianLearner::GradientError() const
     return std::abs(rhs[cblas_idamax(GetNumberOfParameters(), rhs.data(), 1)]);
 }
 
-size_t HessianLearner::GetNnzHessian() const
+MKL_INT HessianLearner::GetNnzHessian() const
 {
-    return Hcol.size();
+    return (MKL_INT)Hcol.size();
 }
 
 double HessianLearner::GetHessianFillRatio() const
@@ -181,7 +182,7 @@ double HessianLearner::ComputeLogDetHessian()
     Hrow.back() = Hrow[n - 1] + 1;
     std::swap(newHcol, Hcol);
     H.resize(Hrow.back());
-    const auto nnz = H.size();
+    const MKL_INT nnz = GetNnzHessian();
     // H = 0
     cblas_dscal(nnz, 0, H.data(), 1);
     
@@ -234,6 +235,7 @@ std::vector<double> HessianLearner::GetOptimizationInfo()
     {
         throw LearnerError("Unable to get inertia! Error code: ", status);
     }
+    result.pop_back();
     return result;
 }
 
@@ -264,7 +266,7 @@ std::vector<double> HessianLearner::GetOptimizationResult(bool verbose)
 
 std::string HessianLearner::GetOptimizationHeader()
 {
-    return "KL        graderr   normerr           +         -         0";
+    return "       KL   graderr   normerr         +         -";
 }
 
 bool HessianLearner::HaltCondition(double tol)
@@ -301,7 +303,7 @@ void HessianLearner::AssembleH(bool Hf)
             double* data;
         } const comp(Pcol.data(), Pdata.data());
 
-        for (size_t str_idx = 0; str_idx < Mrow.size() - 1; ++str_idx)
+        for (MKL_INT str_idx = 0; str_idx < Mrow.size() - 1; ++str_idx)
         {
             if (Mrow[str_idx] + 1 < Mrow[str_idx + 1])
             {   // equivocal str
@@ -360,7 +362,7 @@ void HessianLearner::AssembleH(bool Hf)
                 // J_g
                 Hcol.emplace_back(GetNumberOfParameters() + Ccol[r]);
                 // end of row
-                Hrow.emplace_back(Hcol.size());
+                Hrow.push_back(Hcol.size());
 
                 if (r + 1 < ij.first)
                     Hcol.emplace_back(r + 1); // diagonal, if missing
@@ -375,16 +377,16 @@ void HessianLearner::AssembleH(bool Hf)
         // J_g
         Hcol.emplace_back(GetNumberOfParameters() + Ccol[r]);
         // end of row
-        Hrow.emplace_back(Hcol.size());
+        Hrow.push_back(Hcol.size());
         if (r + 1 < n)
             Hcol.emplace_back(r + 1); // diagonal, if missing
     }
 
     // zeros at the bottom-right corner
-    for (size_t i = n; i < n + k; ++i)
+    for (MKL_INT i = n; i < n + k; ++i)
     {
         Hcol.emplace_back(i);
-        Hrow.emplace_back(Hcol.size());
+        Hrow.push_back(Hcol.size());
     }
 
     H.resize(Hcol.size(), 0.0);
@@ -448,38 +450,13 @@ void HessianLearner::ComputeExpX()
 
 void HessianLearner::InitSlackVariables()
 {
-    //TODO this is not good, try other initialization
-    const MKL_INT n = GetNumberOfParameters(), k = GetNumberOfConstraints();
-    std::vector<double> sumexp2x(k);
-    // this is going to contain the pseudo inverse of J
-    auto& PInvJ = aux;
-    PInvJ.resize(n);
+    const MKL_INT n = GetNumberOfParameters();
 
     ComputeExpX();
     ComputeGrad();
     
-    {   //PInvJ <- exp(2*x)
-
-        // PInvJ <- _x
-        cblas_dcopy(n, _x.data(), 1, PInvJ.data(), 1);
-        // PInvJ *= 2
-        cblas_dscal(n, 2.0, PInvJ.data(), 1);
-        // PInvJ <- exp(PInvJ)
-        vdExp(n, PInvJ.data(), PInvJ.data());
-    }
-    {
-        // sumexp2x <- C^t.PInvJ
-        C.dot(PInvJ.data(), sumexp2x.data(), SPARSE_OPERATION_TRANSPOSE);
-
-        // PInvJ <- C*sumexp2x
-        C.dot(sumexp2x.data(), PInvJ.data(), SPARSE_OPERATION_NON_TRANSPOSE);
-    }
-    // PInvJ <- exp(x) / PInvJ
-    vdDiv(n, expx.data(), PInvJ.data(), PInvJ.data());
-
-    // -PInvJ.gradf
-    SparseMtxHandle PInv_mat(n, k, Crow.data(), Ccol.data(), PInvJ.data());
-    PInv_mat.dot(rhs.data(), _x.data() + n, SPARSE_OPERATION_TRANSPOSE, -1.0, 0.0);
+    // l <- -C^t.gradf
+    C.dot(rhs.data(), _x.data() + n, SPARSE_OPERATION_TRANSPOSE, -1.0, 0.0);
 }
 
 void HessianLearner::ComputeGrad()

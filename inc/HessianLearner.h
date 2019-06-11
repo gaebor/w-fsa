@@ -33,14 +33,14 @@ public:
 
     virtual void OptimizationStep(double eta = 1.0, bool verbose = false);
 
-    size_t GetNumberOfAugmentedParameters()const;
+    MKL_INT GetNumberOfAugmentedParameters()const;
 
     //! returns how far the automaton is from a probabilistic one
     double DeNormalizedFactor()const;
     //! returns the max absolute value in the gradient vector
     double GradientError()const;
 
-    size_t GetNnzHessian()const;
+    MKL_INT GetNnzHessian()const;
     double GetHessianFillRatio()const;
 
     double ComputeLogDetHessian();

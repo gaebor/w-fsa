@@ -53,10 +53,10 @@ public:
     //! computes KL and sum(q)
     void ComputeObjective();
 
-    size_t GetNumberOfStrings()const;
-    size_t GetNumberOfPaths()const;
-    size_t GetNumberOfParameters()const;
-    size_t GetNumberOfConstraints()const;
+    MKL_INT GetNumberOfStrings()const;
+    MKL_INT GetNumberOfPaths()const;
+    MKL_INT GetNumberOfParameters()const;
+    MKL_INT GetNumberOfConstraints()const;
 
     bool HasUniquePaths()const;
      
@@ -70,7 +70,7 @@ public:
     double LogAuxiliaryVolume()const;
     double LogVolume()const;
     double LogDetAuxiliaryHessian()const;
-    size_t GetNumberOfAuxParameters()const;
+    MKL_INT GetNumberOfAuxParameters()const;
     
     //!
     /*!
