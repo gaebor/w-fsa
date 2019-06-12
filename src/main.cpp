@@ -301,15 +301,17 @@ int main(int argc, const char* argv[])
         }
         else
         {// loaded from matrices
-            if (learner->GetNumberOfParameters() > 0)
+            const MKL_INT n = learner->GetNumberOfParameters();
+            const MKL_INT k = learner->GetNumberOfConstraints();
+            if (n > 0)
                 printf("%g", *(learner->GetWeights()));
-            for (auto* x = learner->GetWeights() + 1; x < learner->GetWeights() + learner->GetNumberOfParameters(); ++x)
-                printf("%g ", *x);
-            //std::cout << std::endl;
-            //for (size_t i = learner->GetNumberOfParameters(); i < learner->GetNumberOfAugmentedParameters(); ++i)
-            //{
-            //    std::cout << learner->GetWeights()[i] << " ";
-            //}
+            for (auto* x = learner->GetWeights() + 1; x < learner->GetWeights() + n; ++x)
+                printf(" %g", *x);
+            std::cout << std::endl;
+            if (k > 0)
+                printf("%g", *(learner->GetWeights() + n));
+            for (auto* x = learner->GetWeights() + n + 1; x < learner->GetWeights() + n + k; ++x)
+                printf(" %g", *x);
             std::cout << std::endl;
         }
     }
