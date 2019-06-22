@@ -18,6 +18,7 @@
 #include <functional>
 #include <exception>
 #include <thread>
+#include <chrono>
 
 #include "Isatty.h"
 
@@ -29,6 +30,40 @@ std::pair<const char*, char> GetWord(char*& input, const char* separator= " ");
 void PrintFixedWidth(FILE* out, double x, int width = 7);
 
 typedef const char* CStr;
+
+
+//! simple class to measure time, not thread safe!
+template<class ClockTy = std::chrono::steady_clock>
+class Clock
+{
+public:
+    //! marks instantiation time
+    Clock()
+    {
+        Tick();
+    }
+    //! marks current time
+    void Tick()
+    {
+        _timePoint = MyClock::now();
+    }
+    //! returns time between former time mark and now
+    /*!
+    @return time since last Tick, construction.
+    */
+    double Tock()
+    {
+        auto const now = MyClock::now();
+        const auto elapsed = _frequency * (now - _timePoint).count();
+        return elapsed;
+    }
+    ~Clock() {}
+private:
+    typedef ClockTy MyClock;
+    typedef typename MyClock::duration MyDuration;
+    typename MyClock::time_point _timePoint;
+    static constexpr double _frequency = (double)MyDuration::period::num / MyDuration::period::den;
+};
 
 struct StrEq
 {
@@ -139,20 +174,20 @@ void ProgressIndicator(T begin, T* p, F factor, const char* fmt,
                 if (run)
                 {   
                     written = true;
-                    fprintf(stderr, fmt, size_t(*p - begin)*factor);
+                    fprintf(stderr, fmt, size_t(*p - begin)*factor, args...);
                     fflush(stderr);
                 }
             }
             if (written)
             {
-                fprintf(stderr, fmt, size_t(*p - begin)*factor);
+                fprintf(stderr, fmt, size_t(*p - begin)*factor, args...);
                 fflush(stderr);
             }
         });
     }
     try
     {
-        f(args...);
+        f();
     }
     catch (const MyError& e)
     {

@@ -24,18 +24,19 @@ int main(int argc, const char* argv[])
     int epochs = 20, initflags = 0;
     bool normalize = false, print = false, suppress = false, evaluate = false;
     double eta = 1.0;
-    int recognize = 1;
+    int recognize = 0;
     bool initx = false;
     double tolerance = 1e-6;
-    // int threads = 1;
+    int threads = 1;
     const int max_threads = mkl_get_max_threads();
     size_t test_n = 0, test_t = 0;
-
-    //if (mkl_set_interface_layer(MKL_INTERFACE_ILP64) == -1)
-    //{
-    //    std::cerr << "Unable to specify ILP64 interface layer!" << std::endl;
-    //    return 1;
-    //}
+#if defined MKL_ILP64 && defined mkl_set_interface_layer
+    if (mkl_set_interface_layer(MKL_INTERFACE_ILP64) == -1)
+    {
+       std::cerr << "Unable to specify ILP64 interface layer!" << std::endl;
+       return 1;
+    }
+#endif
     {
         MKLVersion Version;
         mkl_get_version(&Version);
@@ -47,6 +48,7 @@ int main(int argc, const char* argv[])
             '.' << Version.MinorVersion << '.' << Version.UpdateVersion <<
             ' ' << Version.ProductStatus << " Build " << Version.Build <<
             "\nfor " << Version.Processor << "\n";
+        oss << "MKL_INT = " << sizeof(MKL_INT) << "Bytes\n";
         if (max_threads == 1)
             oss << "Only 1 thread";
         else
@@ -68,7 +70,7 @@ int main(int argc, const char* argv[])
         parser.AddFlag(normalize, { "-n", "--normalize" }, "normalize the automaton after optimization");
         parser.AddFlag(print, { "-p", "--print" }, "prints extra info to stderr");
         parser.AddFlag(suppress, { "-s", "--suppress" }, "suppresses printing of learned FSA to stdout");
-        // parser.AddArg(threads, { "-t", "--thread", "--threads" }, "sets the number of MKL threads,\nif not set or zero then leave it to the environment variable");
+        parser.AddArg(threads, { "-t", "--thread", "--threads" }, "sets the number of MKL threads,\nif not set or zero then leave it to the environment variable");
         parser.AddArg(recognize, { "-r", "--recognize" }, "recognize algorithm, 0: Breadth-first search, 1: Depth-first search", "", { 0, 1 });
         parser.AddArg(matrices_filename, { "-m", "--matrices", "--matrix" }, "name for matrix files\n"
             "If filename starts with \"<\" then loads, if \">\" then saves.\n"
@@ -97,10 +99,10 @@ int main(int argc, const char* argv[])
 
         parser.Do(argc, argv);
     }
-    //if (threads > 0)
-    //{
-    //    mkl_set_num_threads(threads);
-    //}
+    if (threads > 0)
+    {
+       mkl_set_num_threads(threads);
+    }
     if (test_t > 0)
     {
         test(std::cout, epochs, test_n, test_t);

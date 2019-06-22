@@ -314,25 +314,26 @@ void Learner::BuildPaths(const Fsa& fsa, const Corpus& corpus, bool bfs)
     p.clear();
     p.reserve(corpus.size()); // just an estimate
 
-    size_t current_word = 0;
-    ProgressIndicator(current_word, &current_word, 100.0 / corpus.size(),
-        "\rRecognize: %4.3g%% ",
+    size_t n_word = 0;
+    const char* current_word = "";
+    ProgressIndicator(n_word, &n_word, 100.0 / corpus.size(),
+        "\rRecognize: %4.3g%% \"%-20.20s\"",
         [&]()
     {
         aux_hessian = 0;
         for (wordIt = corpus.begin(); wordIt != corpus.end(); ++wordIt)
         {
-            ++current_word;
+            ++n_word;
             has_path = false;
-            (recognizer.*recognize)(wordIt->first.c_str(), startState, Path());
-            
+            current_word = wordIt->first.c_str();
+            (recognizer.*recognize)(current_word, startState, Path());
             if (!has_path)
             {   // word was not recognized
                 ++auxiliary_parameters;
                 aux_hessian -= std::log(wordIt->second);
             }
         }
-    });
+    }, current_word);
 
     if (Mcol.size() == Mrow.size())
         unique_path = true;

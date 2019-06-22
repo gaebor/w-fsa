@@ -37,7 +37,7 @@ void HessianLearner::InitDss(bool reorder)
     {
         throw LearnerError("Unable to define structure! Error code: ", status);
     }
-    solver_opt = reorder ? MKL_DSS_GET_ORDER : MKL_DSS_MY_ORDER;
+    solver_opt = reorder ? MKL_DSS_METIS_OPENMP_ORDER : MKL_DSS_MY_ORDER;
     perm.resize(rows);
     if (!reorder)
     {   // stick to original order
@@ -236,6 +236,8 @@ std::vector<double> HessianLearner::GetOptimizationInfo()
         throw LearnerError("Unable to get inertia! Error code: ", status);
     }
     result.pop_back();
+    result.emplace_back(*std::min_element(_x.begin() + GetNumberOfParameters(), _x.end()));
+    
     return result;
 }
 
@@ -266,7 +268,7 @@ std::vector<double> HessianLearner::GetOptimizationResult(bool verbose)
 
 std::string HessianLearner::GetOptimizationHeader()
 {
-    return "       KL   graderr   normerr         +         -";
+    return "       KL   graderr   normerr         +         - lambdamin";
 }
 
 bool HessianLearner::HaltCondition(double tol)
@@ -276,7 +278,7 @@ bool HessianLearner::HaltCondition(double tol)
 
 void HessianLearner::AssembleH(bool Hf)
 {
-    std::vector<std::pair<MKL_INT, MKL_INT>> indices;
+    std::set<std::pair<MKL_INT, MKL_INT>> indices;
     std::vector<std::pair<MKL_INT, double>> equivocal_intersect;
     equivocal_str_indices.clear();
 
@@ -302,7 +304,6 @@ void HessianLearner::AssembleH(bool Hf)
             MKL_INT* cols;
             double* data;
         } const comp(Pcol.data(), Pdata.data());
-
         for (MKL_INT str_idx = 0; str_idx < Mrow.size() - 1; ++str_idx)
         {
             if (Mrow[str_idx] + 1 < Mrow[str_idx + 1])
@@ -317,7 +318,7 @@ void HessianLearner::AssembleH(bool Hf)
                 equivocal_indices.assign(Pcol.begin() + Prow[path_idx], Pcol.begin() + Prow[path_idx + 1]);
                 equivocal_intersect.clear();
                 std::transform(Pcol.begin() + Prow[path_idx], Pcol.begin() + Prow[path_idx + 1],
-                        Pdata.begin() + Prow[path_idx], std::back_inserter(equivocal_intersect),
+                    Pdata.begin() + Prow[path_idx], std::back_inserter(equivocal_intersect),
                     [](MKL_INT a, double b) {return std::pair<MKL_INT, double>(a, b); });
 
                 for (++path_idx; path_idx < end_path_idx; ++path_idx)
@@ -335,7 +336,7 @@ void HessianLearner::AssembleH(bool Hf)
                 for (auto i = equivocal_indices.begin(); i != equivocal_indices.end(); ++i)
                 {
                     for (auto j = i; j != equivocal_indices.end(); ++j)
-                        SortedInsert(indices, std::make_pair(*i, *j));
+                        indices.emplace(*i, *j);
                 }
             }
         }
@@ -343,14 +344,14 @@ void HessianLearner::AssembleH(bool Hf)
 
     // convert to csr format
     const MKL_INT n = GetNumberOfParameters();
-    const auto k = GetNumberOfConstraints();
+    const MKL_INT k = GetNumberOfConstraints();
     H.clear(); Hrow.clear(); Hcol.clear();
     Hrow.reserve(n + k + 1);
     Hcol.reserve(2 * n + k); // lower bound
     Hrow.emplace_back(0);
 
     MKL_INT row = 0;
-    if ((indices.empty() || indices.front().first > 0) && n > 0)
+    if ((indices.empty() || indices.begin()->first > 0) && n > 0)
         Hcol.emplace_back(0);
     for (const auto& ij : indices)
     {
@@ -360,7 +361,7 @@ void HessianLearner::AssembleH(bool Hf)
             for (MKL_INT r = row; r < ij.first; ++r)
             {
                 // J_g
-                Hcol.emplace_back(GetNumberOfParameters() + Ccol[r]);
+                Hcol.emplace_back(n + Ccol[r]);
                 // end of row
                 Hrow.push_back(Hcol.size());
 
@@ -375,7 +376,7 @@ void HessianLearner::AssembleH(bool Hf)
     for (MKL_INT r = row; r < n; ++r)
     {
         // J_g
-        Hcol.emplace_back(GetNumberOfParameters() + Ccol[r]);
+        Hcol.emplace_back(n + Ccol[r]);
         // end of row
         Hrow.push_back(Hcol.size());
         if (r + 1 < n)

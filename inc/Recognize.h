@@ -61,10 +61,11 @@ public:
 
     void RecognizeBFS(const char* original_word, const Fsa::State& state, Path history = Path())const
     {
+        Clock<> clock;
         std::queue<QueueType> queue;
         queue.emplace(original_word, &state, history);
 
-        while (!queue.empty())
+        while (!queue.empty() && clock.Tock() < 1.0)
         {
             auto& working = queue.front();
             auto current_word = working.word;
