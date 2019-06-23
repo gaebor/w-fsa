@@ -23,6 +23,7 @@ int main(int argc, const char* argv[])
     std::string matrices_filename;
     int epochs = 20, initflags = 0;
     bool normalize = false, print = false, suppress = false, evaluate = false;
+    bool print_recognize = false;
     double eta = 1.0;
     int recognize = 0;
     bool initx = false;
@@ -72,6 +73,7 @@ int main(int argc, const char* argv[])
         parser.AddFlag(suppress, { "-s", "--suppress" }, "suppresses printing of learned FSA to stdout");
         parser.AddArg(threads, { "-t", "--thread", "--threads" }, "sets the number of MKL threads,\nif not set or zero then leave it to the environment variable");
         parser.AddArg(recognize, { "-r", "--recognize" }, "recognize algorithm, 0: Breadth-first search, 1: Depth-first search", "", { 0, 1 });
+        parser.AddArg(print_recognize, { "-pr", "--print-recognize" }, "print recognized paths to stderr");
         parser.AddArg(matrices_filename, { "-m", "--matrices", "--matrix" }, "name for matrix files\n"
             "If filename starts with \"<\" then loads, if \">\" then saves.\n"
             "loading from matrix files implies uniform initialization, unless initial x vector is provided with \"-x\"");
@@ -159,7 +161,7 @@ int main(int argc, const char* argv[])
             "\n\tfree parameters: " << fsa.GetNumberOfFreeParameters() <<
             std::endl;
 
-        if (print)
+        if (print || print_recognize)
         {
             typedef std::pair<std::string, std::string> Path;
             Recognizer<Path> recognizer(fsa.GetEndState(),

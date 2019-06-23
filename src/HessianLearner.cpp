@@ -219,24 +219,25 @@ void HessianLearner::PrintEq(FILE* f) const
 
 std::vector<double> HessianLearner::GetOptimizationInfo()
 {
-    std::vector<double> result(6);
+    std::vector<double> result(7);
     result[0] = GetKLDistance();
 
     result[1] = GradientError();
-    result[2] = DeNormalizedFactor();
-    error = std::max(result[1], result[2]);
+    error = std::max(result[1], DeNormalizedFactor());
+
+    result[2] = *std::min_element(rhs.begin() + GetNumberOfParameters(), rhs.end());
+    result[3] = *std::max_element(rhs.begin() + GetNumberOfParameters(), rhs.end());
 
     MKL_INT status;
     solver_opt = MKL_DSS_DEFAULTS;
-    double* ret_values = result.data() + 3;
+    double* ret_values = result.data() + 4;
     auto solver_handle = solver.GetHandler();
 
     if ((status = dss_statistics(solver_handle, solver_opt, "Inertia", ret_values)) != MKL_DSS_SUCCESS)
     {
         throw LearnerError("Unable to get inertia! Error code: ", status);
     }
-    result.pop_back();
-    result.emplace_back(*std::min_element(_x.begin() + GetNumberOfParameters(), _x.end()));
+    result[6] = *std::min_element(_x.begin() + GetNumberOfParameters(), _x.end());
     
     return result;
 }
@@ -268,7 +269,7 @@ std::vector<double> HessianLearner::GetOptimizationResult(bool verbose)
 
 std::string HessianLearner::GetOptimizationHeader()
 {
-    return "       KL   graderr   normerr         +         - lambdamin";
+    return "       KL   graderr     g_min     g_max         +         - lambdamin";
 }
 
 bool HessianLearner::HaltCondition(double tol)
