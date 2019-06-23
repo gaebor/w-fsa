@@ -85,8 +85,7 @@ public:
     const char* GetEndState()const { return end_state; }
 
     const TransitionMtx& GetTransitionMtx()const;
-
-    void ResetWeights(const double* x);
+    TransitionMtx& GetTransitionMtx();
 
 private:
     void AssignIndices();

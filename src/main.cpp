@@ -28,7 +28,7 @@ int main(int argc, const char* argv[])
     int recognize = 0;
     bool initx = false;
     double tolerance = 1e-6;
-    int threads = 1;
+    int threads = 0;
     const int max_threads = mkl_get_max_threads();
     size_t test_n = 0, test_t = 0;
 #if defined MKL_ILP64 && defined mkl_set_interface_layer
@@ -171,9 +171,12 @@ int main(int argc, const char* argv[])
                 history.first += emission.str;
                 history.second += " -> ";
                 history.second += transition.next->first;
-                history.second += "[";
-                history.second += emission.str;
-                history.second += "]";
+                if (emission.str[0])
+                {
+                    history.second += '"';
+                    history.second += emission.str;
+                    history.second += '"';
+                }
                 return history;
             }, [](const Path& path)
             {
@@ -196,6 +199,8 @@ int main(int argc, const char* argv[])
             "\n\tpaths: " << learner->GetNumberOfPaths() <<
             "\n\tcommon support: " << learner->GetCommonSupport() <<
             "\n\tunique paths: " << (learner->HasUniquePaths() ? "true" : "false") <<
+            "\nAfter trimming:\n\tparameters: " << learner->GetNumberOfParameters() <<
+            "\n\tconstraints: " << learner->GetNumberOfConstraints() <<
             std::endl;
     }
 
@@ -253,7 +258,7 @@ int main(int argc, const char* argv[])
     //    "\n\tnnz: " << learner.GetNnzHessian() <<
     //    "\n\tfill: " << learner.GetHessianFillRatio() << std::endl;
     //
-    const auto width = (int)ceil(log10(epochs + 1));
+    const auto width = (int)std::ceil(std::log10(epochs + 1));
     if (epochs > 0)
     {
         std::cerr << "Optimization:\nepoch\t" << learner->GetOptimizationHeader() << std::endl;
@@ -298,9 +303,9 @@ int main(int argc, const char* argv[])
     }
     if (!suppress)
     {
-        if (fsa.GetNumberOfParameters() == learner->GetNumberOfParameters())
+        if (fsa.GetNumberOfParameters() > 0)
         {// FSA has been loaded
-            fsa.ResetWeights(learner->GetWeights());
+            learner->RewriteWeights(fsa);
             fsa.Dump(stdout);
         }
         else

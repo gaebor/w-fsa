@@ -11,7 +11,7 @@ void Corpus::Read(FILE * input)
     std::string word;
     clear();
     std::vector<char> content;
-   
+
     if (!ReadContent(input, content))
         throw MyError("Cannot read file!");
     char* c = content.data();
@@ -43,6 +43,13 @@ void Corpus::Read(FILE * input)
             } while (result.second);
         }
     });
+    for (auto& wordIt : *this)
+    {
+        if (!std::isnormal(wordIt.second) || wordIt.second < 0)
+        {
+            throw CorpusError("\"", wordIt.first, "\" has probability ", wordIt.second, "!");
+        }
+    }
 }
 
 Corpus::~Corpus()

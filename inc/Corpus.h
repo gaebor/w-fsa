@@ -5,6 +5,13 @@
 #include <string>
 #include <unordered_map>
 
+#include "Utils.h"
+
+struct CorpusError : public MyError
+{
+    using MyError::MyError;
+};
+
 class Corpus : public std::unordered_map<std::string, double>
 {
 public:

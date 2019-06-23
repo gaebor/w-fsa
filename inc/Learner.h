@@ -28,7 +28,9 @@ public:
     //! makes sure weights sum up to one.
     void Renormalize();
 
+    void RewriteWeights(Fsa& fsa)const;
     const double* GetWeights()const;
+
 
     void PrintC(FILE* f)const;
     void PrintJ(FILE* f)const;
@@ -107,6 +109,15 @@ private:
     finds out unique path property
     */
     void BuildPaths(const Fsa& fsa, const Corpus& corpus, bool bfs = true);
+
+    /*! Trims unnecessary variables from P and C matrices
+        it should be run after BuildPaths
+    */
+    void Trim();
+
+    double GetWeight(MKL_INT i)const;
+
+    std::vector<MKL_INT> trimmed_weights;
 
     //!
     /*!

@@ -55,6 +55,21 @@ void Learner::Renormalize()
     C.dot(g, _x.data(), SPARSE_OPERATION_NON_TRANSPOSE, -1.0, 1.0);
 }
 
+void Learner::RewriteWeights(Fsa & fsa) const
+{
+    for (auto& t : fsa.GetTransitionMtx())
+    {
+        auto& transitions = t.second.transitions;
+        auto& emissions = t.second.emissions;
+
+        for (auto& edge : emissions)
+            edge.logprob = (edge.index >= 0 ? GetWeight(edge.index) : 0.0);
+
+        for (auto& edge : transitions)
+            edge.logprob = (edge.index >= 0 ? GetWeight(edge.index) : 0.0);
+    }
+}
+
 void Learner::PrintJ(FILE* f)const 
 {
     //vdExp(_x.size(), _x.data(), _x.data());
@@ -138,7 +153,8 @@ bool Learner::LoadMatrices(const std::string& filename)
         ifs.close();
     }
     else
-        return false;
+        throw LearnerError("Unable to open \"", filename + ".C", "\"!");
+
     ifs.open(filename + ".M");
     if (ifs)
     {
@@ -146,7 +162,8 @@ bool Learner::LoadMatrices(const std::string& filename)
         ifs.close();
     }
     else
-        return false;
+        throw LearnerError("Unable to open \"", filename + ".M", "\"!");
+
     ifs.open(filename + ".P");
     if (ifs)
     {
@@ -154,7 +171,8 @@ bool Learner::LoadMatrices(const std::string& filename)
         ifs.close();
     }
     else
-        return false;
+        throw LearnerError("Unable to open \"", filename + ".P", "\"!");
+
     ifs.open(filename + ".prob");
     do
     {
@@ -173,11 +191,11 @@ bool Learner::LoadMatrices(const std::string& filename)
         ifs >> aux_hessian;
         ifs >> auxiliary_parameters;
         if (!ifs)
-            return false;
+            throw LearnerError("Invalid data in \"", filename + ".aux", "\"!");
         ifs.close();
     }
     else
-        return false;
+        throw LearnerError("Unable to open \"", filename + ".aux", "\"!");
 
     if (p.size() + 1 != Mrow.size())
         throw LearnerError("Size mismatch: ", p.size() + 1, " != ", Mrow.size());
@@ -266,17 +284,20 @@ void Learner::BuildFrom(const Fsa& fsa, const Corpus& corpus, bool bfs)
 {
     BuildConstraints(fsa);
     BuildPaths(fsa, corpus, bfs);
+    Trim();
 }
 
 void Learner::BuildPaths(const Fsa& fsa, const Corpus& corpus, bool bfs)
 {
+    trimmed_weights.assign(GetNumberOfParameters(), -2); // per default every index is unused
     auxiliary_parameters = 0;
     const auto& startState = fsa.GetTransitionMtx().at(fsa.GetStartState());
+    const auto endstate = fsa.GetEndState();
     bool has_path = false;
     Corpus::const_iterator wordIt; // currently processed word
 
     Recognizer<Path>::Accumulator accumulator(
-    [endstate=fsa.GetEndState()](Path& history, const Fsa::Transitions::value_type& transition, const Fsa::Emissions::value_type& emission) -> Path&
+        [&](Path& history, const Fsa::Transitions::value_type& transition, const Fsa::Emissions::value_type& emission) -> Path&
     {
         if (transition.index >= 0)
             SortedInsert(history, transition.index) += 1;
@@ -300,6 +321,7 @@ void Learner::BuildPaths(const Fsa& fsa, const Corpus& corpus, bool bfs)
         {
             Pdata.emplace_back(variable.second);
             Pcol.emplace_back(variable.first);
+            trimmed_weights[variable.first] = 0; // variable is marked used
         }
 
         Mcol.push_back(Mcol.size());        
@@ -317,7 +339,7 @@ void Learner::BuildPaths(const Fsa& fsa, const Corpus& corpus, bool bfs)
     size_t n_word = 0;
     const char* current_word = "";
     ProgressIndicator(n_word, &n_word, 100.0 / corpus.size(),
-        "\rRecognize: %4.3g%% \"%-20.20s\"",
+        "\rRecognize: %4.3g%% \"%-20.20s\"      ",
         [&]()
     {
         aux_hessian = 0;
@@ -340,6 +362,90 @@ void Learner::BuildPaths(const Fsa& fsa, const Corpus& corpus, bool bfs)
 
     Mrow.push_back(Mcol.size());
     Prow.push_back(Pcol.size());
+}
+
+void Learner::Trim()
+{
+    // new -1 may appear if a parameter in a constraint appears to be alone
+    MKL_INT c = -1;
+    MKL_INT nnz_in_c = -1;
+    for (MKL_INT i = 0; i < GetNumberOfParameters(); ++i)
+    {
+        const MKL_INT this_c = Ccol[i];
+        if (this_c != c)
+        {   // finish this constraint
+            c = this_c;
+            if (nnz_in_c >= 0)
+                trimmed_weights[nnz_in_c] = -1;
+            nnz_in_c = -1;
+        }
+        if (trimmed_weights[i] >= 0)
+        {
+            if (nnz_in_c == -1)
+                nnz_in_c = i;
+            else
+                nnz_in_c = -2;
+        }
+    }
+    if (nnz_in_c >= 0)
+        trimmed_weights[nnz_in_c] = -1;
+    {
+    decltype(Ccol) Ccol_new; Ccol_new.reserve(GetNumberOfParameters());
+
+    // renumbering parameters, reconstruct C matrix
+    MKL_INT good_indices = 0;
+    MKL_INT good_constraints = -1;
+    c = -1;
+    for (MKL_INT i = 0; i < GetNumberOfParameters(); ++i)
+    {
+        if (trimmed_weights[i] == 0)
+        {
+            trimmed_weights[i] = good_indices++;
+            if (c < Ccol[i])
+            {
+                ++good_constraints;
+                c = Ccol[i];
+            }
+            Ccol_new.push_back(good_constraints);
+        }
+    }
+    std::swap(Ccol, Ccol_new);
+    Crow.resize(good_indices + 1);
+    } // destruct swapped Ccol
+
+    // reconstruct P matrix
+    decltype(Pcol) Pcol_new; Pcol.reserve(Pcol.size());
+    decltype(Pdata) Pdata_new; Pdata.reserve(Pdata.size());
+    
+    MKL_INT thisrowstart = Prow[0];
+    for (MKL_INT p = 0; p < GetNumberOfPaths(); ++p)
+    {
+        MKL_INT thisrowend = Prow[p + 1];
+        for (MKL_INT j = thisrowstart; j < thisrowend; ++j)
+        {
+            if (trimmed_weights[Pcol[j]] >= 0)
+            {
+                Pcol_new.push_back(trimmed_weights[Pcol[j]]);
+                Pdata_new.push_back(Pdata[j]);
+            }
+        }
+        thisrowstart = Prow[p + 1];
+        Prow[p + 1] = Pcol_new.size();
+    }
+
+    std::swap(Pcol_new, Pcol);
+    std::swap(Pdata_new, Pdata);    
+}
+
+double Learner::GetWeight(MKL_INT i) const
+{
+    static const double minf = atof("-inf");
+    switch (trimmed_weights[i])
+    {
+    case -2: return minf;
+    case -1: return 0.0;
+    default: return _x[trimmed_weights[i]];
+    }
 }
 
 void Learner::FinalizeCallback() {}

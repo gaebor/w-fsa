@@ -371,7 +371,7 @@ DssSolverHandler::~DssSolverHandler()
     }
 }
 
-void* DssSolverHandler::GetHandler() const
+_MKL_DSS_HANDLE_t DssSolverHandler::GetHandler() const
 {
     return solver_handler;
 }

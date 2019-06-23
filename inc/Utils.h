@@ -24,6 +24,7 @@
 
 #include "mkl_types.h"
 #include "mkl_spblas.h"
+#include "mkl_dss.h"
 
 std::pair<const char*, char> GetWord(char*& input, const char* separator= " ");
 
@@ -352,9 +353,9 @@ struct DssSolverHandler
 {
     DssSolverHandler(MKL_INT solver_opt);
     ~DssSolverHandler();
-    void* GetHandler()const;
+    _MKL_DSS_HANDLE_t GetHandler()const;
 private:
-    void* solver_handler;
+    _MKL_DSS_HANDLE_t solver_handler;
 };
 
 double RealSymmetricLogDet(const MKL_INT* const Hrow, const MKL_INT n,

@@ -279,20 +279,11 @@ const Fsa::TransitionMtx & Fsa::GetTransitionMtx() const
     return transition_probs;
 }
 
-void Fsa::ResetWeights(const double* x)
+Fsa::TransitionMtx & Fsa::GetTransitionMtx()
 {
-    for (auto& t : transition_probs)
-    {
-        auto& transitions = t.second.transitions;
-        auto& emissions = t.second.emissions;
-
-        for (auto& edge : emissions)
-            edge.logprob = (edge.index >= 0 ? x[edge.index] : 0.0);
-
-        for (auto& edge : transitions)
-            edge.logprob = (edge.index >= 0 ? x[edge.index] : 0.0);
-    }
+    return transition_probs;
 }
+
 //
 //StrPaths Fsa::Recognize(const char* word)const
 //{
