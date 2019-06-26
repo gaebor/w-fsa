@@ -73,7 +73,7 @@ int main(int argc, const char* argv[])
         parser.AddFlag(suppress, { "-s", "--suppress" }, "suppresses printing of learned FSA to stdout");
         parser.AddArg(threads, { "-t", "--thread", "--threads" }, "sets the number of MKL threads,\nif not set or zero then leave it to the environment variable");
         parser.AddArg(recognize, { "-r", "--recognize" }, "recognize algorithm, 0: Breadth-first search, 1: Depth-first search", "", { 0, 1 });
-        parser.AddArg(print_recognize, { "-pr", "--print-recognize" }, "print recognized paths to stderr");
+        parser.AddFlag(print_recognize, { "-pr", "--print-recognize" }, "print recognized paths to stderr");
         parser.AddArg(matrices_filename, { "-m", "--matrices", "--matrix" }, "name for matrix files\n"
             "If filename starts with \"<\" then loads, if \">\" then saves.\n"
             "loading from matrix files implies uniform initialization, unless initial x vector is provided with \"-x\"");
@@ -261,9 +261,11 @@ int main(int argc, const char* argv[])
     const auto width = (int)std::ceil(std::log10(epochs + 1));
     if (epochs > 0)
     {
-        std::cerr << "Optimization:\nepoch\t" << learner->GetOptimizationHeader() << std::endl;
+        std::cerr << "Optimization:" << std::endl;
         for (int e = 1; e <= epochs; ++e)
         {
+            if (e % 20 == 1)
+                    std::cerr << "epoch\t" << learner->GetOptimizationHeader() << std::endl;
             learner->OptimizationStep(eta, print);
 
             fprintf(stderr, "%0*d\t", width, e);
@@ -277,7 +279,7 @@ int main(int argc, const char* argv[])
             std::cerr << std::endl;
             for (double x : info)
             {
-                if (std::isnan(x) || std::isinf(x))
+                if (!std::isfinite(x))
                 {
                     std::cerr << std::endl;
                     throw LearnerError(x, " detected at epoch ", e);

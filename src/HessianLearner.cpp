@@ -7,11 +7,12 @@
 #include <algorithm>
 #include <iterator>
 #include <iostream>
+#include <math.h>
 
 HessianLearner::HessianLearner()
     : Learner(), solver(MKL_DSS_ZERO_BASED_INDEXING +
-        MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR + MKL_DSS_REFINEMENT_ON),
-        include_Hf(false)
+        MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR + MKL_DSS_REFINEMENT_OFF),
+        include_Hf(false), do_reorder(false), degenerate(false)
 {
 }
 
@@ -37,14 +38,19 @@ void HessianLearner::InitDss(bool reorder)
     {
         throw LearnerError("Unable to define structure! Error code: ", status);
     }
-    solver_opt = reorder ? MKL_DSS_METIS_OPENMP_ORDER : MKL_DSS_MY_ORDER;
-    perm.resize(rows);
-    if (!reorder)
-    {   // stick to original order
+    std::vector<MKL_INT> perm;
+    if (reorder)
+    {
+        solver_opt = MKL_DSS_METIS_OPENMP_ORDER;
+    }else
+    {
+        solver_opt = MKL_DSS_MY_ORDER;
+        perm.resize(rows);
         for (MKL_INT i = 0; i < rows; ++i)
             perm[i] = i;
     }
-    if ((status = dss_reorder(solver_handle, solver_opt, perm.data())) != MKL_DSS_SUCCESS)
+    status = dss_reorder(solver_handle, solver_opt, perm.data());
+    if (status != MKL_DSS_SUCCESS)
     {
         throw LearnerError("Unable to find reorder! Error code: ", status);
     }
@@ -52,6 +58,16 @@ void HessianLearner::InitDss(bool reorder)
 
 HessianLearner::~HessianLearner()
 {
+}
+
+template<class InputIterator, class Pred>
+InputIterator find_bad(InputIterator first, InputIterator last, Pred pred)
+{
+  while (first!=last) {
+    if (!pred(*first)) return first;
+    ++first;
+  }
+  return last;
 }
 
 void HessianLearner::OptimizationStep(double eta, bool verbose)
@@ -75,6 +91,8 @@ void HessianLearner::OptimizationStep(double eta, bool verbose)
         PrintEq(stderr);
     }
 
+    lambda_min = *std::min_element(_x.begin() + GetNumberOfParameters(), _x.end());
+    
     // sol = H \ rhs
     MKL_INT nRhs = 1, status;
     solver_opt = MKL_DSS_INDEFINITE;
@@ -84,11 +102,21 @@ void HessianLearner::OptimizationStep(double eta, bool verbose)
         throw LearnerError("Unable to factor coefficient matrix! Error code: ", status);
     }
 
-    solver_opt = MKL_DSS_REFINEMENT_ON;
+    solver_opt = MKL_DSS_REFINEMENT_OFF;
     if ((status = dss_solve_real(solver_handle, solver_opt, rhs.data(), nRhs, aux.data())) != MKL_DSS_SUCCESS)
     {
         throw LearnerError("Unable to solve equation! Error code: ", status);
     }
+    
+    if (find_bad(aux.begin(), aux.end(), [](double x){return std::isfinite(x);}) != aux.end())
+    {
+        degenerate = true;
+        fprintf(stderr, "Solution of Newton step is degenerate!\n");
+    }
+    
+    // clipping
+    std::transform(aux.begin(), aux.begin() + GetNumberOfParameters(), aux.begin(), [](double x){return std::min(x,1.0);});
+    
     cblas_daxpy(GetNumberOfAugmentedParameters(), -eta, aux.data(), 1, _x.data(), 1);
 }
 
@@ -133,9 +161,23 @@ void HessianLearner::InitCallback(int flags)
         i += ((include_Hf ? done : skipped) << (4 * place));
         --place;
         
-        InitDss(flags & 16);
+        do_reorder = flags & 16;
+        InitDss(do_reorder);
         i += (((flags & 16) ? done : skipped) << (4 * place));
     });
+    degenerate = false;
+    
+    // aux.resize(GetNumberOfParameters());
+    // std::vector<double> aux2(GetNumberOfPaths());
+    
+    // M.dot(p.data(), aux2.data(), SPARSE_OPERATION_TRANSPOSE);
+    
+    // P.dot(aux2.data(), aux.data(), SPARSE_OPERATION_TRANSPOSE);
+    // C.dot(aux.data(), aux2.data(), SPARSE_OPERATION_TRANSPOSE);
+    // C.dot(aux2.data(), aux.data());
+    
+    // std::cerr << *std::min_element(aux.begin(), aux.end()) << ' ' <<
+                 // *std::max_element(aux.begin(), aux.end()) << std::endl;
 }
 
 MKL_INT HessianLearner::GetNumberOfAugmentedParameters() const
@@ -167,7 +209,7 @@ double HessianLearner::GetHessianFillRatio() const
 double HessianLearner::ComputeLogDetHessian()
 {
     // Hf is not zero, but hasn't been included
-    if (!include_Hf && !unique_path)
+    if (!include_Hf && !HasUniquePaths())
         AssembleH(true);
 
     const MKL_INT n = GetNumberOfParameters();
@@ -204,7 +246,7 @@ double HessianLearner::ComputeLogDetHessian()
         }
     }
    
-    return RealSymmetricLogDet(Hrow.data(), n, Hcol.data(), nnz, H.data(), false);
+    return RealSymmetricLogDet(Hrow.data(), n, Hcol.data(), nnz, H.data(), do_reorder);
 }
 
 void HessianLearner::PrintH(FILE* f) const
@@ -217,9 +259,21 @@ void HessianLearner::PrintEq(FILE* f) const
     PrintCsrMtx(f, H, Hrow, Hcol, rhs);
 }
 
+std::string HessianLearner::GetOptimizationHeader()
+{
+    return   "       KL"
+            "   graderr"
+            "     g_min"
+            "     g_max"
+            "         +"
+            "         -"
+            "  bad path"
+            "   bad var";
+}
+
 std::vector<double> HessianLearner::GetOptimizationInfo()
 {
-    std::vector<double> result(7);
+    std::vector<double> result(8);
     result[0] = GetKLDistance();
 
     result[1] = GradientError();
@@ -228,17 +282,38 @@ std::vector<double> HessianLearner::GetOptimizationInfo()
     result[2] = *std::min_element(rhs.begin() + GetNumberOfParameters(), rhs.end());
     result[3] = *std::max_element(rhs.begin() + GetNumberOfParameters(), rhs.end());
 
-    MKL_INT status;
-    solver_opt = MKL_DSS_DEFAULTS;
-    double* ret_values = result.data() + 4;
-    auto solver_handle = solver.GetHandler();
-
-    if ((status = dss_statistics(solver_handle, solver_opt, "Inertia", ret_values)) != MKL_DSS_SUCCESS)
+    if (!degenerate)
     {
-        throw LearnerError("Unable to get inertia! Error code: ", status);
+        MKL_INT status;
+        solver_opt = MKL_DSS_DEFAULTS;
+        double* ret_values = result.data() + 4;
+        auto solver_handle = solver.GetHandler();
+
+        if ((status = dss_statistics(solver_handle, solver_opt, "Inertia", ret_values)) != MKL_DSS_SUCCESS)
+        {
+            throw LearnerError("Unable to get inertia! Error code: ", status);
+        }
     }
-    result[6] = *std::min_element(_x.begin() + GetNumberOfParameters(), _x.end());
-    
+    // result[6] = ;
+
+    // result[7] = *std::min_element(_x.begin(), _x.begin() + GetNumberOfParameters());
+    // result[8] = double(std::distance(_x.begin(), std::min_element(_x.begin(), _x.begin() + GetNumberOfParameters())));
+    if (!HasUniquePaths())
+    {
+        auto bad_path = cblas_idamin(GetNumberOfPaths(), relative_path_probs.data(), 1);
+        result[6] = (double)bad_path;
+        double x_min = atof("inf");
+        MKL_INT x_min_i = 0;
+        for (MKL_INT i = Prow[bad_path]; i < Prow[bad_path+1]; ++i)
+        {
+            if (_x[Pcol[i]] < x_min)
+            {
+                x_min_i = Pcol[i];
+                x_min = _x[x_min_i];
+            }
+        }
+        result[7] = (double)x_min_i;
+    }
     return result;
 }
 
@@ -262,18 +337,15 @@ std::vector<double> HessianLearner::GetOptimizationResult(bool verbose)
         LogAuxiliaryVolume(),
         logdetHessian,
         LogDetAuxiliaryHessian(),
-        (double)(GetNumberOfParameters() - GetNumberOfConstraints()),
+        (double)(GetNumberOfParameters() - GetNumberOfConstraints()), //TODO parameters before trim!
         (double)std::max<MKL_INT>(0, GetNumberOfAuxParameters() - 1)
         });
 }
 
-std::string HessianLearner::GetOptimizationHeader()
-{
-    return "       KL   graderr     g_min     g_max         +         - lambdamin";
-}
-
 bool HessianLearner::HaltCondition(double tol)
 {
+    if (degenerate)
+        throw LearnerError("Unable to continue!");
     return error <= tol;
 }
 
@@ -284,7 +356,7 @@ void HessianLearner::AssembleH(bool Hf)
     equivocal_str_indices.clear();
 
     // gather nnz indexes
-    if (Hf && !unique_path)
+    if (Hf && !HasUniquePaths())
     {
         struct Comparer
         {
@@ -465,7 +537,7 @@ void HessianLearner::ComputeGrad()
 {
     if (grad_aux.empty())
     {   // initialize
-        if (unique_path)
+        if (HasUniquePaths())
         {   // gradient is constant: -P^t.p
             grad_aux.resize(GetNumberOfParameters());
             P.dot(p.data(), grad_aux.data(), SPARSE_OPERATION_TRANSPOSE, -1.0, 0.0);
@@ -478,7 +550,7 @@ void HessianLearner::ComputeGrad()
     }
 
     ComputeModeledProbs();
-    if (unique_path)
+    if (HasUniquePaths())
     {
         // rhs <- grad_aux
         cblas_dcopy(GetNumberOfParameters(), grad_aux.data(), 1, rhs.data(), 1);

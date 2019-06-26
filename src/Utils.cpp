@@ -84,7 +84,12 @@ void PrintFixedWidth(FILE * out, double x, int width)
     // GO TO HELL
     const int magnitude = (x == 0) ? 0 : (int)std::floor(std::log10(std::abs(x)));
     if (magnitude <= width - 2 && magnitude >= 0)
-        fprintf(out, "%*.*f", width, std::max(0, width - 3 - magnitude), x);
+    {
+        if (std::floor(x) == x)
+            fprintf(out, "%*.0f", width, x);
+        else
+            fprintf(out, "%*.*f", width, std::max(0, width - 3 - magnitude), x);
+    }
     else if (-4 < magnitude && magnitude < 0)
         fprintf(out, "%*.*f", width, width - 3, x);
     else

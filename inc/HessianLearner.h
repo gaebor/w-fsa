@@ -160,9 +160,8 @@ private:
     SparseMtxHandle Jg;
 
     std::vector<MKL_INT> Hrow, Hcol;
-    std::vector<MKL_INT> perm;
     DssSolverHandler solver;
     MKL_INT solver_opt;
-    double error;
-    bool include_Hf;
+    double error, lambda_min;
+    bool include_Hf, do_reorder, degenerate;
 };

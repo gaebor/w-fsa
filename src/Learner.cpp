@@ -12,14 +12,12 @@
 #include "Recognize.h"
 
 Learner::Learner()
-    : common_support(0.0), plogp(0.0), kl(0.0),
-    unique_path(false)
+    : common_support(0.0), plogp(0.0), kl(0.0)
 {
 }
 
 //Learner::Learner(const Fsa& fsa)
-//:   common_support(0.0), plogp(0.0), kl(0.0),
-//    unique_path(false)
+//:   common_support(0.0), plogp(0.0), kl(0.0)
 //{
 //    BuildConstraints(fsa); 
 //}
@@ -207,7 +205,6 @@ bool Learner::LoadMatrices(const std::string& filename)
         throw LearnerError("M cols != P rows");
 
     _x.assign(GetNumberOfParameters(), 0.0);
-    unique_path = GetNumberOfStrings() == GetNumberOfPaths();
 
     return true;
 }
@@ -357,9 +354,6 @@ void Learner::BuildPaths(const Fsa& fsa, const Corpus& corpus, bool bfs)
         }
     }, current_word);
 
-    if (Mcol.size() == Mrow.size())
-        unique_path = true;
-
     Mrow.push_back(Mcol.size());
     Prow.push_back(Pcol.size());
 }
@@ -462,10 +456,10 @@ void Learner::Finalize()
     q.resize(GetNumberOfStrings());
     logq.resize(GetNumberOfStrings());
 
-    if (!unique_path)
-        relative_path_probs.resize(GetNumberOfPaths());
-    else
+    if (HasUniquePaths())
         relative_path_probs.clear();
+    else
+        relative_path_probs.resize(GetNumberOfPaths());
 
     M.Init(GetNumberOfStrings(), GetNumberOfPaths(), Mrow.data(), Mcol.data(), ones.data());
     P.Init(GetNumberOfPaths(), GetNumberOfParameters(), Prow.data(), Pcol.data(), Pdata.data());
@@ -501,7 +495,7 @@ MKL_INT Learner::GetNumberOfAuxParameters() const
 
 void Learner::ComputeModeledProbs()
 {
-    if (unique_path)
+    if (HasUniquePaths())
     {   // relative_path_probs holds nothing in this case!
 
         // logq = P.x
@@ -576,7 +570,10 @@ void Learner::InitCallback(int)
 {
 }
 
-bool Learner::HasUniquePaths() const { return unique_path; }
+bool Learner::HasUniquePaths() const
+{
+    return Mrow.size() == Mcol.size() + 1;
+}
 
 double Learner::GetKLDistance() const
 {

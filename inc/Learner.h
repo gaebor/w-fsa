@@ -164,7 +164,4 @@ protected:
     SparseMtxHandle M;
 
     std::vector<std::pair<MKL_INT, std::vector<MKL_INT>>> equivocal_str_indices;
-
-protected:
-    bool unique_path;
 };
