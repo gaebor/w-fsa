@@ -412,9 +412,9 @@ void Learner::Trim()
     decltype(Pdata) Pdata_new; Pdata.reserve(Pdata.size());
     
     MKL_INT thisrowstart = Prow[0];
-    for (MKL_INT p = 0; p < GetNumberOfPaths(); ++p)
+    for (MKL_INT pathindex = 0; pathindex < GetNumberOfPaths(); ++pathindex)
     {
-        MKL_INT thisrowend = Prow[p + 1];
+        MKL_INT thisrowend = Prow[pathindex + 1];
         for (MKL_INT j = thisrowstart; j < thisrowend; ++j)
         {
             if (trimmed_weights[Pcol[j]] >= 0)
@@ -423,8 +423,8 @@ void Learner::Trim()
                 Pdata_new.push_back(Pdata[j]);
             }
         }
-        thisrowstart = Prow[p + 1];
-        Prow[p + 1] = Pcol_new.size();
+        thisrowstart = Prow[pathindex + 1];
+        Prow[pathindex + 1] = Pcol_new.size();
     }
 
     std::swap(Pcol_new, Pcol);
@@ -531,7 +531,7 @@ void Learner::ComputeObjective()
 {
     // q.1
     // modeled_prob = cblas_ddot(GetNumberOfStrings(), q.data(), 1, ones.data(), 1);
-    // p.log(p) - p.log(q)
+    // pathindex.log(pathindex) - pathindex.log(q)
     kl = plogp - cblas_ddot(GetNumberOfStrings(), p.data(), 1, logq.data(), 1);
 }
 
