@@ -1,6 +1,6 @@
 #include "Corpus.h"
 
-#include "Utils.h"
+#include <unordered_set>
 
 Corpus::Corpus()
 {
@@ -10,10 +10,11 @@ void Corpus::Read(FILE * input)
 {
     std::string word;
     clear();
+    std::unordered_set<std::string> words;
     std::vector<char> content;
 
     if (!ReadContent(input, content))
-        throw MyError("Cannot read file!");
+        throw CorpusError("Cannot read file!");
     char* c = content.data();
     std::pair<const char*, char> result;
 
@@ -35,7 +36,14 @@ void Corpus::Read(FILE * input)
                 if (result.second == '\n' || result.second == '\0')
                 {
                     if (!empty)
-                        (*this)[word] += atof(result.first);
+                    {
+                        if (words.insert(word).second)
+                        {
+                            emplace_back(word, atof(result.first));
+                        }
+                        else
+                            throw CorpusError("\"", word, "\" is duplicate!");
+                    }
                     break;
                 }
                 empty = false;

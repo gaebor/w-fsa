@@ -93,7 +93,7 @@ void HessianLearner::OptimizationStep(double eta, bool verbose)
 
     lambda_min = *std::min_element(_x.begin() + GetNumberOfParameters(), _x.end());
     
-    // sol = H \ rhs
+    // aux = H \ rhs
     MKL_INT nRhs = 1, status;
     solver_opt = MKL_DSS_INDEFINITE;
     auto solver_handle = solver.GetHandler();
@@ -113,11 +113,13 @@ void HessianLearner::OptimizationStep(double eta, bool verbose)
         degenerate = true;
         fprintf(stderr, "Solution of Newton step is degenerate!\n");
     }
-    
-    // clipping
-    std::transform(aux.begin(), aux.begin() + GetNumberOfParameters(), aux.begin(), [](double x){return std::min(x,1.0);});
-    
-    cblas_daxpy(GetNumberOfAugmentedParameters(), -eta, aux.data(), 1, _x.data(), 1);
+    else
+    {
+        // clipping
+        // std::transform(aux.begin(), aux.begin() + GetNumberOfParameters(), aux.begin(), [](double x){return std::min(x,1.0);});
+        
+        cblas_daxpy(GetNumberOfAugmentedParameters(), -eta, aux.data(), 1, _x.data(), 1);
+    }
 }
 
 void HessianLearner::InitCallback(int flags)
@@ -267,13 +269,13 @@ std::string HessianLearner::GetOptimizationHeader()
             "     g_max"
             "         +"
             "         -"
-            "  bad path"
-            "   bad var";
+            " lambdamin"
+            "      rmin";
 }
 
 std::vector<double> HessianLearner::GetOptimizationInfo()
 {
-    std::vector<double> result(8);
+    std::vector<double> result(9);
     result[0] = GetKLDistance();
 
     result[1] = GradientError();
@@ -294,26 +296,44 @@ std::vector<double> HessianLearner::GetOptimizationInfo()
             throw LearnerError("Unable to get inertia! Error code: ", status);
         }
     }
-    // result[6] = ;
+    result[6] = lambda_min;
+    // result[6] = *std::min_element(_x.begin(), _x.begin() + GetNumberOfParameters());
 
     // result[7] = *std::min_element(_x.begin(), _x.begin() + GetNumberOfParameters());
     // result[8] = double(std::distance(_x.begin(), std::min_element(_x.begin(), _x.begin() + GetNumberOfParameters())));
     if (!HasUniquePaths())
     {
-        auto bad_path = cblas_idamin(GetNumberOfPaths(), relative_path_probs.data(), 1);
-        result[6] = (double)bad_path;
-        double x_min = atof("inf");
-        MKL_INT x_min_i = 0;
-        for (MKL_INT i = Prow[bad_path]; i < Prow[bad_path+1]; ++i)
-        {
-            if (_x[Pcol[i]] < x_min)
-            {
-                x_min_i = Pcol[i];
-                x_min = _x[x_min_i];
-            }
-        }
-        result[7] = (double)x_min_i;
+        result[8] = (double)cblas_idamin(GetNumberOfPaths(), relative_path_probs.data(), 1);
+        result[7] = relative_path_probs[(MKL_INT)result[8]];
     }
+    // std::cerr << "bad paths:";
+    // for (MKL_INT i = 0; i < GetNumberOfPaths(); ++i)
+    // {
+        // if (!(relative_path_probs[i] > 0))
+        // {
+            // auto str_idx = std::distance(Mrow.begin(), std::lower_bound(Mrow.begin(), Mrow.end(), i));
+            // std::cerr << " " << i << "str(" << str_idx << ")";
+        // }
+    // }
+    // std::cerr << std::endl;
+    // std::cerr << "bad strings:";
+    // for (MKL_INT i = 0; i < GetNumberOfStrings(); ++i)
+    // {
+        // if (!(q[i] > 0))
+            // std::cerr << " " << i << "path[" << Mrow[i] << "," << Mrow[i+1] << ")";
+    // }
+    // std::cerr << std::endl;
+    // std::cerr << "bad variables:";
+    // for (MKL_INT i = 0; i < GetNumberOfParameters(); ++i)
+    // {
+        // if (!std::isfinite(_x[i]))
+            // std::cerr << " " << i;
+    // }
+    // std::cerr << std::endl;
+    // auto bad_path = double(std::distance(relative_path_probs.begin(), find_bad(relative_path_probs.begin(), relative_path_probs.end(), [](double x){return x > 0;})));
+    // size_t bad_x = double(std::distance(q.begin(), find_bad(q.begin(), q.end(), [](double x){return x > 0;})));
+    // result[7] = cblas_ddot(GetNumberOfStrings(), q.data(), 1, ones.data(), 1);
+    
     return result;
 }
 
@@ -377,7 +397,7 @@ void HessianLearner::AssembleH(bool Hf)
             MKL_INT* cols;
             double* data;
         } const comp(Pcol.data(), Pdata.data());
-        for (MKL_INT str_idx = 0; str_idx < Mrow.size() - 1; ++str_idx)
+        for (MKL_INT str_idx = 0; str_idx < GetNumberOfStrings(); ++str_idx)
         {
             if (Mrow[str_idx] + 1 < Mrow[str_idx + 1])
             {   // equivocal str

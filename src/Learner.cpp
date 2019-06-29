@@ -16,17 +16,6 @@ Learner::Learner()
 {
 }
 
-//Learner::Learner(const Fsa& fsa)
-//:   common_support(0.0), plogp(0.0), kl(0.0)
-//{
-//    BuildConstraints(fsa); 
-//}
-//
-//Learner::Learner(const std::string& filename)
-//{
-//    LoadMatrices(filename);
-//}
-
 Learner::~Learner()
 {
 }
@@ -395,6 +384,8 @@ void Learner::Trim()
         if (trimmed_weights[i] == 0)
         {
             trimmed_weights[i] = good_indices++;
+            if (trimmed_weights[i] < i)
+                _x[trimmed_weights[i]] = _x[i];
             if (c < Ccol[i])
             {
                 ++good_constraints;
@@ -407,6 +398,8 @@ void Learner::Trim()
     Crow.resize(good_indices + 1);
     } // destruct swapped Ccol
 
+    _x.resize(GetNumberOfParameters());
+    
     // reconstruct P matrix
     decltype(Pcol) Pcol_new; Pcol.reserve(Pcol.size());
     decltype(Pdata) Pdata_new; Pdata.reserve(Pdata.size());
@@ -529,8 +522,6 @@ void Learner::ComputeModeledProbs()
 
 void Learner::ComputeObjective()
 {
-    // q.1
-    // modeled_prob = cblas_ddot(GetNumberOfStrings(), q.data(), 1, ones.data(), 1);
     // p.log(p) - p.log(q)
     kl = plogp - cblas_ddot(GetNumberOfStrings(), p.data(), 1, logq.data(), 1);
 }
@@ -548,11 +539,6 @@ double Learner::GetCommonSupport() const
 {
     return common_support;
 }
-
-//double Learner::GetTotalModeledProb() const
-//{
-//    return modeled_prob;
-//}
 
 double Learner::gKLDistance() const
 {

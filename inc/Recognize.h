@@ -16,7 +16,7 @@ private:
     Accumulator accumulator;
     ResultHandler resultHandler;
 
-    const char* end_state;    
+    const char* const end_state;    
 
     struct QueueType
     {
@@ -96,11 +96,19 @@ public:
     }
 
     template<bool BFS=true>
-    void Recognize(const char* word, const Fsa::State& state, Path history = Path())const
+    void Recognize(const char* word, const Fsa::State& state, Path history)const
     {
         if (BFS)
-            RecognizeIndexBFS(word, state, history);
+            RecognizeBFS(word, state, history);
         else
-            RecognizeIndexDFS(word, state, history);
+            RecognizeDFS(word, state, history);
+    }
+    
+    void Recognize(const char* word, const Fsa::State& state, Path history, bool bfs)const
+    {
+        if (bfs)
+            RecognizeBFS(word, state, history);
+        else
+            RecognizeDFS(word, state, history);
     }
 };

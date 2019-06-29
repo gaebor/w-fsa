@@ -21,6 +21,7 @@ int main(int argc, const char* argv[])
 {
     std::string automaton_filename, corpus_filename;
     std::string matrices_filename;
+    std::string output_filename;
     int epochs = 20, initflags = 0;
     bool normalize = false, print = false, suppress = false, evaluate = false;
     bool print_recognize = false;
@@ -64,6 +65,7 @@ int main(int argc, const char* argv[])
 
         parser.AddArg(corpus_filename, { "-c", "--corpus" }, "corpus to load");
         parser.AddArg(automaton_filename, { "-a", "--automaton", "--load" }, "FSA to load");
+        parser.AddArg(output_filename, { "-o", "--output" }, "Write learned WFSA in this file, or stdout if empty");
         parser.AddArg(epochs, { "-e", "--epoch", "--epochs" }, "number of maximum optimization epochs");
         parser.AddArg(eta, { "-l", "--learning", "--eta" }, "learning rate");
         parser.AddArg(tolerance, { "-tol", "--tol", "--tolerance" }, "tolerance when to stop");
@@ -184,12 +186,8 @@ int main(int argc, const char* argv[])
             });
             const auto& start_state = fsa.GetTransitionMtx().at(fsa.GetStartState());
             const auto empty_history = Path("", fsa.GetStartState());
-            if (recognize == 0)
-                for (const auto& word : corpus)
-                    recognizer.RecognizeBFS(word.first.c_str(), start_state, empty_history);
-            else
-                for (const auto& word : corpus)
-                    recognizer.RecognizeDFS(word.first.c_str(), start_state, empty_history);
+            for (const auto& word : corpus)
+                recognizer.Recognize(word.first.c_str(), start_state, empty_history, recognize == 0);
         }
 
         std::cerr << "Recognize: "; std::cerr.flush();
@@ -305,26 +303,33 @@ int main(int argc, const char* argv[])
     }
     if (!suppress)
     {
-        if (fsa.GetNumberOfParameters() > 0)
-        {// FSA has been loaded
-            learner->RewriteWeights(fsa);
-            fsa.Dump(stdout);
-        }
-        else
-        {// loaded from matrices
-            const MKL_INT n = learner->GetNumberOfParameters();
-            const MKL_INT k = learner->GetNumberOfConstraints();
-            if (n > 0)
-                printf("%g", *(learner->GetWeights()));
-            for (auto* x = learner->GetWeights() + 1; x < learner->GetWeights() + n; ++x)
-                printf(" %g", *x);
-            std::cout << std::endl;
-            if (k > 0)
-                printf("%g", *(learner->GetWeights() + n));
-            for (auto* x = learner->GetWeights() + n + 1; x < learner->GetWeights() + n + k; ++x)
-                printf(" %g", *x);
-            std::cout << std::endl;
-        }
+        FILE* outf = output_filename.empty() ? stdout : fopen(output_filename.c_str(), "w");
+        if (outf)
+        {
+            if (fsa.GetNumberOfParameters() > 0)
+            {// FSA has been loaded
+                learner->RewriteWeights(fsa);
+                fsa.Dump(outf);
+            }
+            else
+            {// loaded from matrices
+                const MKL_INT n = learner->GetNumberOfParameters();
+                const MKL_INT k = learner->GetNumberOfConstraints();
+                if (n > 0)
+                    fprintf(outf, "%g", *(learner->GetWeights()));
+                for (auto* x = learner->GetWeights() + 1; x < learner->GetWeights() + n; ++x)
+                    fprintf(outf, " %g", *x);
+                std::cout << std::endl;
+                if (k > 0)
+                    fprintf(outf, "%g", *(learner->GetWeights() + n));
+                for (auto* x = learner->GetWeights() + n + 1; x < learner->GetWeights() + n + k; ++x)
+                    fprintf(outf, " %g", *x);
+                std::cout << std::endl;
+            }
+            if (outf != stdout)
+                fclose(outf);
+        }else
+            throw MyError("Unable to open output file \"", output_filename, "\" for writing!");
     }
     }
     catch (std::exception& e)
