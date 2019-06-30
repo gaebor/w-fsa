@@ -42,7 +42,7 @@ public:
     bool LoadMatrices(const std::string& filename);
 
     virtual std::vector<double> GetOptimizationInfo();
-    virtual std::string GetOptimizationHeader();
+    virtual std::string GetOptimizationHeader()const;
     virtual std::vector<double> GetOptimizationResult(bool verbose= false);
 
     virtual bool HaltCondition(double tol);

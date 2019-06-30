@@ -261,7 +261,7 @@ void HessianLearner::PrintEq(FILE* f) const
     PrintCsrMtx(f, H, Hrow, Hcol, rhs);
 }
 
-std::string HessianLearner::GetOptimizationHeader()
+std::string HessianLearner::GetOptimizationHeader()const
 {
     return   "       KL"
             "   graderr"
@@ -279,10 +279,11 @@ std::vector<double> HessianLearner::GetOptimizationInfo()
     result[0] = GetKLDistance();
 
     result[1] = GradientError();
-    error = std::max(result[1], DeNormalizedFactor());
 
     result[2] = *std::min_element(rhs.begin() + GetNumberOfParameters(), rhs.end());
     result[3] = *std::max_element(rhs.begin() + GetNumberOfParameters(), rhs.end());
+
+    error = std::max(std::max(result[1], std::abs(result[2])), std::abs(result[3]));
 
     if (!degenerate)
     {

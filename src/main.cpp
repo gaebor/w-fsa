@@ -11,6 +11,7 @@
 
 #include "Fsa.h"
 #include "HessianLearner.h"
+#include "QuasiNewtonLearner.h"
 #include "Corpus.h"
 #include "Utils.h"
 #include "Recognize.h"
@@ -22,6 +23,7 @@ int main(int argc, const char* argv[])
     std::string automaton_filename, corpus_filename;
     std::string matrices_filename;
     std::string output_filename;
+    std::string optimizer = "Hessian";
     int epochs = 20, initflags = 0;
     bool normalize = false, print = false, suppress = false, evaluate = false;
     bool print_recognize = false;
@@ -75,6 +77,7 @@ int main(int argc, const char* argv[])
         parser.AddFlag(suppress, { "-s", "--suppress" }, "suppresses printing of learned FSA to stdout");
         parser.AddArg(threads, { "-t", "--thread", "--threads" }, "sets the number of MKL threads,\nif not set or zero then leave it to the environment variable");
         parser.AddArg(recognize, { "-r", "--recognize" }, "recognize algorithm, 0: Breadth-first search, 1: Depth-first search", "", { 0, 1 });
+        parser.AddArg<std::string>(optimizer, { "-opt", "--optimizer" }, "", "", { "Hessian", "QuasiNewton" });
         parser.AddFlag(print_recognize, { "-pr", "--print-recognize" }, "print recognized paths to stderr");
         parser.AddArg(matrices_filename, { "-m", "--matrices", "--matrix" }, "name for matrix files\n"
             "If filename starts with \"<\" then loads, if \">\" then saves.\n"
@@ -115,7 +118,7 @@ int main(int argc, const char* argv[])
     try {
 
     Fsa fsa;
-    std::unique_ptr<Learner> learner(new HessianLearner());
+    std::unique_ptr<Learner> learner(optimizer == "Hessian" ? (Learner*)(new HessianLearner()) : (Learner*)(new QuasiNewtonLearner()));
     if (!matrices_filename.empty() && matrices_filename.front() == '<')
     {   // skip Corpus and Fsa
         std::cerr << "Loading matrices \"" << matrices_filename.substr(1) << "\" ... ";

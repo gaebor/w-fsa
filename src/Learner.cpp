@@ -203,7 +203,7 @@ std::vector<double> Learner::GetOptimizationInfo()
     return std::vector<double>();
 }
 
-std::string Learner::GetOptimizationHeader()
+std::string Learner::GetOptimizationHeader()const
 {
     return std::string();
 }

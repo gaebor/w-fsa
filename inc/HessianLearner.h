@@ -49,7 +49,7 @@ public:
     void PrintEq(FILE* f)const;
     virtual std::vector<double> GetOptimizationInfo();
     virtual std::vector<double> GetOptimizationResult(bool verbose=false);
-    virtual std::string GetOptimizationHeader();
+    virtual std::string GetOptimizationHeader()const;
     virtual bool HaltCondition(double tol);
 protected:
     virtual void FinalizeCallback();
