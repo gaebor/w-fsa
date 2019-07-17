@@ -50,12 +50,22 @@ public:
     }
     //! returns time between former time mark and now
     /*!
-    @return time since last Tick, construction.
+    @return time since last Tick or construction.
     */
     double Tock()
     {
         auto const now = MyClock::now();
         const auto elapsed = _frequency * (now - _timePoint).count();
+        return elapsed;
+    }
+    //! returns time between former time marker and now, also resets time marker to 'now'
+    /*!
+    */
+    double Tack()
+    {
+        auto const now = MyClock::now();
+        const auto elapsed = _frequency * (now - _timePoint).count();
+        _timePoint = now;
         return elapsed;
     }
     ~Clock() {}

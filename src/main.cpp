@@ -126,6 +126,14 @@ int main(int argc, const char* argv[])
         if (!learner->LoadMatrices(matrices_filename.substr(1)))
             throw LearnerError("Unable to load Learner from \"", matrices_filename.substr(1), "\"");
         std::cerr << "done" << std::endl;
+        std::cerr << "Info:" <<
+            "\n\tparameters: " << learner->GetNumberOfParameters() <<
+            "\n\tconstraints: " << learner->GetNumberOfConstraints() <<
+            "\n\tstrings: " << learner->GetNumberOfStrings() <<
+            "\n\tpaths: " << learner->GetNumberOfPaths() <<
+            "\n\tcommon support: " << learner->GetCommonSupport() <<
+            "\n\tunique paths: " << (learner->HasUniquePaths() ? "true" : "false") <<
+            std::endl;
     }else
     {
         std::cerr << "Corpus: "; std::cerr.flush();
@@ -262,21 +270,23 @@ int main(int argc, const char* argv[])
     const auto width = (int)std::ceil(std::log10(epochs + 1));
     if (epochs > 0)
     {
+        // Clock<> clock;
         std::cerr << "Optimization:" << std::endl;
         for (int e = 1; e <= epochs; ++e)
         {
             if (e % 20 == 1)
                     std::cerr << "epoch\t" << learner->GetOptimizationHeader() << std::endl;
             learner->OptimizationStep(eta, print);
-
             fprintf(stderr, "%0*d\t", width, e);
-            
+            // PrintFixedWidth(stderr, clock.Tock()/e, 9);
+            // fputs("\t", stderr);
             const auto info = learner->GetOptimizationInfo();
             for (double x : info)
             {
                 PrintFixedWidth(stderr, x, 9);
                 fputs(" ", stderr);
             }
+
             std::cerr << std::endl;
             for (double x : info)
             {

@@ -11,7 +11,7 @@
 
 HessianLearner::HessianLearner()
     : Learner(), solver(MKL_DSS_ZERO_BASED_INDEXING +
-        MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR + MKL_DSS_REFINEMENT_OFF),
+        MKL_DSS_MSG_LVL_INFO + MKL_DSS_TERM_LVL_ERROR + MKL_DSS_REFINEMENT_OFF),
         include_Hf(false), do_reorder(false), degenerate(false)
 {
 }
@@ -60,19 +60,8 @@ HessianLearner::~HessianLearner()
 {
 }
 
-template<class InputIterator, class Pred>
-InputIterator find_bad(InputIterator first, InputIterator last, Pred pred)
-{
-  while (first!=last) {
-    if (!pred(*first)) return first;
-    ++first;
-  }
-  return last;
-}
-
 void HessianLearner::OptimizationStep(double eta, bool verbose)
 {
-    aux.resize(GetNumberOfAugmentedParameters());
 
     ComputeRhs();
     ComputeObjective();
@@ -91,8 +80,23 @@ void HessianLearner::OptimizationStep(double eta, bool verbose)
         PrintEq(stderr);
     }
 
+    aux.resize(GetNumberOfAugmentedParameters());
+
     lambda_min = *std::min_element(_x.begin() + GetNumberOfParameters(), _x.end());
-    
+
+    // if (lambda_min < 0)
+    // {
+        // fprintf(stderr, "lambda < 0 at index(es)");
+        // auto bad_it = std::find_if(_x.begin() + GetNumberOfParameters(), _x.end(), [](double x) {return x < 0; });
+        // while (bad_it != _x.end())
+        // {
+            // fprintf(stderr, " %zu", std::distance(_x.begin() + GetNumberOfParameters(), bad_it));
+            // bad_it++;
+            // bad_it = std::find_if(bad_it, _x.end(), [](double x) {return x < 0; });
+        // }
+        // fprintf(stderr, "!\n");
+    // }
+
     // aux = H \ rhs
     MKL_INT nRhs = 1, status;
     solver_opt = MKL_DSS_INDEFINITE;
@@ -108,17 +112,19 @@ void HessianLearner::OptimizationStep(double eta, bool verbose)
         throw LearnerError("Unable to solve equation! Error code: ", status);
     }
     
-    if (find_bad(aux.begin(), aux.end(), [](double x){return std::isfinite(x);}) != aux.end())
+    if (std::find_if(aux.begin(), aux.end(), [](double x) {return !std::isfinite(x); }) != aux.end())
     {
         degenerate = true;
-        fprintf(stderr, "Solution of Newton step is degenerate!\n");
+        fprintf(stderr, "Solution of Newton step is degenerate at %f%% of the parameters and %f%% of the constraints!\n",
+            100.0*std::count_if(aux.begin(), aux.begin() + GetNumberOfParameters(), [](double x) {return !std::isfinite(x); }) / GetNumberOfParameters(),
+            100.0*std::count_if(aux.begin() + GetNumberOfParameters(), aux.end(), [](double x) {return !std::isfinite(x); }) / GetNumberOfConstraints());
     }
     else
     {
-        // clipping
-        // std::transform(aux.begin(), aux.begin() + GetNumberOfParameters(), aux.begin(), [](double x){return std::min(x,1.0);});
-        
         cblas_daxpy(GetNumberOfAugmentedParameters(), -eta, aux.data(), 1, _x.data(), 1);
+        // clipping
+        std::transform(_x.begin(), _x.begin() + GetNumberOfParameters(), _x.begin(), [](double x) {return std::max(-20.0, std::min(x, 2.0)); });
+        std::transform(_x.begin() + GetNumberOfParameters(), _x.end(), _x.begin() + GetNumberOfParameters(), [](double x) {return std::max(x, 1e-10); });
     }
 }
 

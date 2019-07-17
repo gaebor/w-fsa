@@ -5,7 +5,7 @@
 #include "mkl_types.h"
 
 /*!
-the following will be explicitly solved, without intel MKL
+the following will be explicitly solved, without DSS
 <pre>
               H              _x   rhs
 +---------------+--------+  +--+  +--+

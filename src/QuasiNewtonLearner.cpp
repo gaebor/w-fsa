@@ -138,7 +138,6 @@ void QuasiNewtonLearner::ComputeLambdaNext()
 
 void QuasiNewtonLearner::ComputeG()
 {
-    const MKL_INT n = GetNumberOfParameters();
     const MKL_INT k = GetNumberOfConstraints();
 
     // g = -1
