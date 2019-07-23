@@ -38,7 +38,16 @@ void QuasiNewtonLearner::InitCallback(int flags)
         Renormalize();
     }
     
-    exponential_lambda = (flags & 4) != 0;
+    if (flags & 4)
+    {
+        ComputeExpX();
+        ComputeGrad();
+
+        // l <- -C^t.gradf
+        C.dot(grad.data(), lambda.data(), SPARSE_OPERATION_TRANSPOSE, -1.0, 0.0);
+    }
+
+    exponential_lambda = (flags & 32) != 0;
 }
 
 void QuasiNewtonLearner::ComputeExpX()
@@ -184,30 +193,6 @@ void QuasiNewtonLearner::OptimizationStep(double eta, bool)
     // x += -eta*rhs
     cblas_daxpy(GetNumberOfParameters(), -eta, rhs.data(), 1, _x.data(), 1);
 
-    //{
-    //    std::transform(_x.begin(), _x.end(), _x.begin(), [](double x) {return std::max(-20.0, std::min(x, 2.0)); });
-    //}
-    if (!exponential_lambda)
-    {
-        cblas_dcopy(GetNumberOfConstraints(), laux.data(), 1, lambda.data(), 1);
-    }else
-    {
-        // exponential update
-        /*
-        lambda *= e^{1-laux/lambda}
-        */
-
-        // laux /= lambda
-        vdDiv(GetNumberOfConstraints(), laux.data(), lambda.data(), laux.data());
-
-        // laux -= 1
-        vdSub(GetNumberOfConstraints(), laux.data(), ones.data(), laux.data());
-
-        // e^laux
-        vdExp(GetNumberOfConstraints(), laux.data(), laux.data());
-
-        // lambda *= laux
-        vdMul(GetNumberOfConstraints(), lambda.data(), laux.data(), lambda.data());
-    }
+    LambdaUpdate(laux.data(), lambda.data(), exponential_lambda);
 
 }

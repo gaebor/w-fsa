@@ -435,6 +435,33 @@ double Learner::GetWeight(MKL_INT i) const
     }
 }
 
+void Learner::LambdaUpdate(double * lnext, double * l, bool exponential) const
+{
+    if (!exponential)
+    {
+        cblas_dcopy(GetNumberOfConstraints(), lnext, 1, l, 1);
+    }
+    else
+    {
+        // exponential update
+        /*
+        lambda *= e^{laux/lambda-1}
+        */
+
+        // laux /= lambda
+        vdDiv(GetNumberOfConstraints(), lnext, l, lnext);
+
+        // laux -= 1
+        vdSub(GetNumberOfConstraints(), lnext, ones.data(), lnext);
+
+        // e^laux
+        vdExp(GetNumberOfConstraints(), lnext, lnext);
+
+        // lambda *= laux
+        vdMul(GetNumberOfConstraints(), l, lnext, l);
+    }
+}
+
 void Learner::FinalizeCallback() {}
 
 void Learner::Finalize()

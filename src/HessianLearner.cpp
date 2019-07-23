@@ -12,7 +12,7 @@
 HessianLearner::HessianLearner()
     : Learner(), solver(MKL_DSS_ZERO_BASED_INDEXING +
         MKL_DSS_MSG_LVL_INFO + MKL_DSS_TERM_LVL_ERROR + MKL_DSS_REFINEMENT_OFF),
-        include_Hf(false), do_reorder(false), degenerate(false)
+        include_Hf(false), do_reorder(false), degenerate(false), exponential_lambda(false)
 {
 }
 
@@ -121,16 +121,20 @@ void HessianLearner::OptimizationStep(double eta, bool verbose)
     }
     else
     {
-        cblas_daxpy(GetNumberOfAugmentedParameters(), -eta, aux.data(), 1, _x.data(), 1);
-        // clipping
-        //std::transform(_x.begin(), _x.begin() + GetNumberOfParameters(), _x.begin(), [](double x) {return std::max(-20.0, std::min(x, 2.0)); });
-        //std::transform(_x.begin() + GetNumberOfParameters(), _x.end(), _x.begin() + GetNumberOfParameters(), [](double x) {return std::max(x, 1e-10); });
+        cblas_daxpy(GetNumberOfParameters(), -eta, aux.data(), 1, _x.data(), 1);
+        // lambda next
+        double* lnext = aux.data() + GetNumberOfParameters();
+        cblas_daxpby(GetNumberOfConstraints(), 1.0, _x.data() + GetNumberOfParameters(), 1, -eta, lnext, 1);
+
+        LambdaUpdate(lnext, _x.data() + GetNumberOfParameters(), exponential_lambda);
+
     }
 }
 
 void HessianLearner::InitCallback(int flags)
 {
     size_t i = 0;
+    exponential_lambda = (flags & 32) != 0;
     size_t place = 4;
     ProgressIndicator<size_t>(0, &i, 1,
         "\rInitialize %5X ",

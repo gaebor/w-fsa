@@ -164,4 +164,5 @@ private:
     MKL_INT solver_opt;
     double error, lambda_min;
     bool include_Hf, do_reorder, degenerate;
+    bool exponential_lambda;
 };

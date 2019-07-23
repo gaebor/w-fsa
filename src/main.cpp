@@ -89,6 +89,7 @@ int main(int argc, const char* argv[])
             "4: initialize Lagrange multipliers\n"
             "8: use Hessian of objective, otherwise use only Hessian of constraints\n"
             "16: computes a permutation that minimizes the fill-in during the factorization phase\n"
+            "32: exponential Lagrange multipliers\n"
         );
         parser.AddArg(test_n, { "-testn", "-test_n", "--testn", "--test_n" }, "bitfield which vector sizes to test, calculated in powers of 10:\n"
             "0: no tests, 1: 1, 2: 10, 4: 100, 2^n -> 10^n \n"
