@@ -6,7 +6,7 @@
 #include <math.h>
 
 QuasiNewtonLearner::QuasiNewtonLearner()
-    : Learner(), fixed_lambda(false)
+    : Learner(), exponential_lambda(false)
 {
 }
 
@@ -38,7 +38,7 @@ void QuasiNewtonLearner::InitCallback(int flags)
         Renormalize();
     }
     
-    fixed_lambda = (flags & 4) != 0;
+    exponential_lambda = (flags & 4) != 0;
 }
 
 void QuasiNewtonLearner::ComputeExpX()
@@ -115,24 +115,24 @@ void QuasiNewtonLearner::ComputeGrad()
     }
 }
 
-void QuasiNewtonLearner::ComputeLambdaNext()
+void QuasiNewtonLearner::ComputeLambdaNext(std::vector<double>& result)
 {
-    lambda_min = *std::min_element(lambda.begin(), lambda.end());
+    result.resize(GetNumberOfConstraints());
+    //if (exponential_lambda)
+    //{
+    //    C.dot(grad.data(), result.data(), SPARSE_OPERATION_TRANSPOSE, -1.0, 0.0);
+    //}
+    //else
+    {// 1/(g+1)*(g*lambda -C.grad)
 
-    if (fixed_lambda)
-    {
-        C.dot(grad.data(), lambda.data(), SPARSE_OPERATION_TRANSPOSE, -1.0, 0.0);
-    }
-    else
-    {// lambda <- 1/(g+1)*(g*lambda -C.grad)
-        // lambda <- g*lambda
-        vdMul(GetNumberOfConstraints(), lambda.data(), g.data(), lambda.data());
-        // lambda -= C.grad
-        C.dot(grad.data(), lambda.data(), SPARSE_OPERATION_TRANSPOSE, -1.0, 1.0);
+        // result <- g*lambda
+        vdMul(GetNumberOfConstraints(), lambda.data(), g.data(), result.data());
+        // result -= C.grad
+        C.dot(grad.data(), result.data(), SPARSE_OPERATION_TRANSPOSE, -1.0, 1.0);
         // g <- g+1
         vdAdd(GetNumberOfConstraints(), g.data(), ones.data(), g.data());
 
-        vdDiv(GetNumberOfConstraints(), lambda.data(), g.data(), lambda.data());
+        vdDiv(GetNumberOfConstraints(), result.data(), g.data(), result.data());
     }
 }
 
@@ -150,7 +150,7 @@ void QuasiNewtonLearner::ComputeG()
     g_max = *std::max_element(g.begin(), g.end());
 }
 
-void QuasiNewtonLearner::OptimizationStep(double eta, bool )
+void QuasiNewtonLearner::OptimizationStep(double eta, bool)
 {
     ComputeExpX();
     ComputeG();
@@ -163,27 +163,51 @@ void QuasiNewtonLearner::OptimizationStep(double eta, bool )
         // aux <- J_g.lambda
         Jg.dot(lambda.data(), aux.data());
 
-        // rhs <- grad
-        cblas_dcopy(GetNumberOfParameters(), grad.data(), 1, rhs.data(), 1);
-        // rhs += aux
-        cblas_daxpy(GetNumberOfParameters(), 1.0, aux.data(), 1, rhs.data(), 1);
+        vdAdd(GetNumberOfParameters(), grad.data(), aux.data(), rhs.data());
     }
     grad_error = std::abs(rhs[cblas_idamax(GetNumberOfParameters(), rhs.data(), 1)]);
 
-    ComputeLambdaNext();
+    lambda_min = *std::min_element(lambda.begin(), lambda.end());
 
-    {
-        // rhs <- grad
-        cblas_dcopy(GetNumberOfParameters(), grad.data(), 1, rhs.data(), 1);
+    std::vector<double> laux(GetNumberOfConstraints());
+    ComputeLambdaNext(laux);
 
-        // rhs += J_g.lambda_next
-        Jg.dot(lambda.data(), rhs.data(), SPARSE_OPERATION_NON_TRANSPOSE, 1.0, 1.0);
-    }
+    // rhs <- grad
+    cblas_dcopy(GetNumberOfParameters(), grad.data(), 1, rhs.data(), 1);
+
+    // rhs += J_g.lambda_next
+    Jg.dot(laux.data(), rhs.data(), SPARSE_OPERATION_NON_TRANSPOSE, 1.0, 1.0);
 
     // rhs <- rhs/A
     vdDiv(GetNumberOfParameters(), rhs.data(), aux.data(), rhs.data());
-    
+
     // x += -eta*rhs
     cblas_daxpy(GetNumberOfParameters(), -eta, rhs.data(), 1, _x.data(), 1);
+
+    //{
+    //    std::transform(_x.begin(), _x.end(), _x.begin(), [](double x) {return std::max(-20.0, std::min(x, 2.0)); });
+    //}
+    if (!exponential_lambda)
+    {
+        cblas_dcopy(GetNumberOfConstraints(), laux.data(), 1, lambda.data(), 1);
+    }else
+    {
+        // exponential update
+        /*
+        lambda *= e^{1-laux/lambda}
+        */
+
+        // laux /= lambda
+        vdDiv(GetNumberOfConstraints(), laux.data(), lambda.data(), laux.data());
+
+        // laux -= 1
+        vdSub(GetNumberOfConstraints(), laux.data(), ones.data(), laux.data());
+
+        // e^laux
+        vdExp(GetNumberOfConstraints(), laux.data(), laux.data());
+
+        // lambda *= laux
+        vdMul(GetNumberOfConstraints(), lambda.data(), laux.data(), lambda.data());
+    }
 
 }

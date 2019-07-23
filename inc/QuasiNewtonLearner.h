@@ -45,16 +45,16 @@ protected:
     */
     void ComputeG();
     void ComputeGrad();
-    //! lambda <- lambda_next
+    //! result <- lambda_next
     /*! requires g, grad
-        fucks up g in the meantime
+        adds one to 'g' in the meantime
     */
-    void ComputeLambdaNext();
+    void ComputeLambdaNext(std::vector<double>& result);
 private:
 
     std::vector<double> grad, expx, lambda, g, grad_aux, rhs;
     SparseMtxHandle Jg;
 
     double grad_error, lambda_min, g_min, g_max;
-    bool fixed_lambda;
+    bool exponential_lambda;
 };

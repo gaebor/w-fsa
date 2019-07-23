@@ -123,8 +123,8 @@ void HessianLearner::OptimizationStep(double eta, bool verbose)
     {
         cblas_daxpy(GetNumberOfAugmentedParameters(), -eta, aux.data(), 1, _x.data(), 1);
         // clipping
-        std::transform(_x.begin(), _x.begin() + GetNumberOfParameters(), _x.begin(), [](double x) {return std::max(-20.0, std::min(x, 2.0)); });
-        std::transform(_x.begin() + GetNumberOfParameters(), _x.end(), _x.begin() + GetNumberOfParameters(), [](double x) {return std::max(x, 1e-10); });
+        //std::transform(_x.begin(), _x.begin() + GetNumberOfParameters(), _x.begin(), [](double x) {return std::max(-20.0, std::min(x, 2.0)); });
+        //std::transform(_x.begin() + GetNumberOfParameters(), _x.end(), _x.begin() + GetNumberOfParameters(), [](double x) {return std::max(x, 1e-10); });
     }
 }
 

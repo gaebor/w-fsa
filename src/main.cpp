@@ -75,7 +75,7 @@ int main(int argc, const char* argv[])
         parser.AddFlag(normalize, { "-n", "--normalize" }, "normalize the automaton after optimization");
         parser.AddFlag(print, { "-p", "--print" }, "prints extra info to stderr");
         parser.AddFlag(suppress, { "-s", "--suppress" }, "suppresses printing of learned FSA to stdout");
-        parser.AddArg(threads, { "-t", "--thread", "--threads" }, "sets the number of MKL threads,\nif not set or zero then leave it to the environment variable");
+        parser.AddArg(threads, { "-t", "--thread", "--threads" }, "sets the number of MKL threads,\nif zero then leave it to the environment variable");
         parser.AddArg(recognize, { "-r", "--recognize" }, "recognize algorithm, 0: Breadth-first search, 1: Depth-first search", "", { 0, 1 });
         parser.AddArg<std::string>(optimizer, { "-opt", "--optimizer" }, "", "", { "Hessian", "QuasiNewton" });
         parser.AddFlag(print_recognize, { "-pr", "--print-recognize" }, "print recognized paths to stderr");
