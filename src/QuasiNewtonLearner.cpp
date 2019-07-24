@@ -193,6 +193,9 @@ void QuasiNewtonLearner::OptimizationStep(double eta, bool)
     // x += -eta*rhs
     cblas_daxpy(GetNumberOfParameters(), -eta, rhs.data(), 1, _x.data(), 1);
 
-    LambdaUpdate(laux.data(), lambda.data(), exponential_lambda);
+    // lambda_step = lambda - lambda_next
+    cblas_daxpby(GetNumberOfConstraints(), 1.0, lambda.data(), 1, -1.0, laux.data(), 1);
+
+    LambdaUpdate(laux.data(), lambda.data(), eta, exponential_lambda);
 
 }

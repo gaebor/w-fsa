@@ -123,10 +123,8 @@ void HessianLearner::OptimizationStep(double eta, bool verbose)
     {
         cblas_daxpy(GetNumberOfParameters(), -eta, aux.data(), 1, _x.data(), 1);
         // lambda next
-        double* lnext = aux.data() + GetNumberOfParameters();
-        cblas_daxpby(GetNumberOfConstraints(), 1.0, _x.data() + GetNumberOfParameters(), 1, -eta, lnext, 1);
-
-        LambdaUpdate(lnext, _x.data() + GetNumberOfParameters(), exponential_lambda);
+        double* lstep = aux.data() + GetNumberOfParameters();
+        LambdaUpdate(lstep, _x.data() + GetNumberOfParameters(), eta, exponential_lambda);
 
     }
 }

@@ -435,30 +435,29 @@ double Learner::GetWeight(MKL_INT i) const
     }
 }
 
-void Learner::LambdaUpdate(double * lnext, double * l, bool exponential) const
+void Learner::LambdaUpdate(double* lstep, double* l, double eta, bool exponential) const
 {
     if (!exponential)
     {
-        cblas_dcopy(GetNumberOfConstraints(), lnext, 1, l, 1);
+        cblas_daxpy(GetNumberOfConstraints(), -eta, lstep, 1, l, 1);
     }
     else
     {
         // exponential update
         /*
-        lambda *= e^{laux/lambda-1}
+        lambda *= e^{-eta*lstep/lambda}
         */
 
         // laux /= lambda
-        vdDiv(GetNumberOfConstraints(), lnext, l, lnext);
+        vdDiv(GetNumberOfConstraints(), lstep, l, lstep);
 
-        // laux -= 1
-        vdSub(GetNumberOfConstraints(), lnext, ones.data(), lnext);
+        cblas_dscal(GetNumberOfConstraints(), -eta, lstep, 1);
 
         // e^laux
-        vdExp(GetNumberOfConstraints(), lnext, lnext);
+        vdExp(GetNumberOfConstraints(), lstep, lstep);
 
         // lambda *= laux
-        vdMul(GetNumberOfConstraints(), l, lnext, l);
+        vdMul(GetNumberOfConstraints(), l, lstep, l);
     }
 }
 

@@ -84,7 +84,7 @@ public:
 protected:
     virtual void FinalizeCallback();
     virtual void InitCallback(int flags);
-    void LambdaUpdate(double* lnext, double* l, bool exponential = false)const;
+    void LambdaUpdate(double* lnext, double* l, double eta = 1.0, bool exponential = false)const;
 
 protected:
     //! parameters
