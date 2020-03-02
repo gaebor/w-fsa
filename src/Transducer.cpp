@@ -16,6 +16,37 @@ Transducer::Transducer(std::istream & is)
 
 static auto& mycast = SaturateCast<TransducerIndex>::template Do<size_t>;
 
+static inline bool str_ends(TransducerIndex x)
+{
+    for (size_t i = 0; i < sizeof(TransducerIndex); ++i)
+    {
+        if (((const char*)(&x))[i] == '\0')
+            return true;
+    }
+    return false;
+}
+
+static size_t str_space_required(const char * s)
+{
+    auto original = s;
+    while (*s)
+    {
+        ++s;
+    }
+    return Round<sizeof(TransducerIndex)>::Do((s - original) + 1);
+}
+
+static void append_str(const char * s, std::vector<TransducerIndex>& v)
+{
+    const auto end = v.size();
+    v.resize(end + str_space_required(s) / sizeof(TransducerIndex), 0);
+    char* target = (char*)(&(v[end]));
+    while (*s)
+    {
+        *target++ = *s++;
+    }
+}
+
 void Transducer::Read(std::istream & is)
 {
     std::unordered_map<TransducerIndex, std::array<TransducerIndex, 2>> state_pointers;
@@ -63,7 +94,7 @@ void Transducer::Read(std::istream & is)
             state_pointers[previous_state][1] = state_pointers[from][0];
             previous_state = from;
         }
-        transitions_table.emplace_back(n_transitions);
+        transitions_table.emplace_back(mycast(n_transitions));
         transitions_table.emplace_back(from);
         transitions_table.emplace_back(to);
 
@@ -179,35 +210,4 @@ void Transducer::lookup(const char* s, TransducerIndex beg, const TransducerInde
 
     if (!path.empty())
         path.pop_back();
-}
-
-size_t str_space_required(const char * s)
-{
-    auto original = s;
-    while (*s)
-    {
-        ++s;
-    }
-    return Round<sizeof(TransducerIndex)>::Do((s - original) + 1);
-}
-
-void append_str(const char * s, std::vector<TransducerIndex>& v)
-{
-    const auto end = v.size();
-    v.resize(end + str_space_required(s) / sizeof(TransducerIndex), 0);
-    char* target = (char*)(&(v[end]));
-    while (*s)
-    {
-        *target++ = *s++;
-    }
-}
-
-static inline bool str_ends(TransducerIndex x)
-{
-    for (size_t i = 0; i < sizeof(TransducerIndex); ++i)
-    {
-        if (((const char*)(&x))[i] == '\0')
-            return true;
-    }
-    return false;
 }

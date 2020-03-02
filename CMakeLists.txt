@@ -18,7 +18,7 @@ set (incdir ${PROJECT_SOURCE_DIR}/inc)
 # 					${srcdir}/Isatty.cpp ${incdir}/Isatty.h
 # 					${srcdir}/Fsa.cpp ${incdir}/Fsa.h)
 
-add_executable(att-recognize ${srcdir}/attol.cpp
+add_executable(attol ${srcdir}/attol.cpp
 					${srcdir}/Utils.cpp ${incdir}/Utils.h
 					${srcdir}/Isatty.cpp ${incdir}/Isatty.h
 					${srcdir}/Transducer.cpp ${incdir}/Transducer.h)

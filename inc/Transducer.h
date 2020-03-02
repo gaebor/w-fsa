@@ -17,12 +17,6 @@ typedef ATTOL_NUMBER TransducerIndex;
 #undef ATTOL_NUMBER
 #endif
 
-size_t str_space_required(const char* s);
-
-void append_str(const char* s, std::vector<TransducerIndex>& v);
-
-bool str_ends(TransducerIndex x);
-
 class Transducer
 {
 public:
@@ -42,7 +36,7 @@ public:
 private:
     std::vector<TransducerIndex> transitions_table;
     TransducerIndex start_state_start, start_state_end;
-    TransducerIndex n_transitions, n_states;
+    size_t n_transitions, n_states;
 
     Path path;
     size_t max_results;
