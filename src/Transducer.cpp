@@ -47,6 +47,66 @@ static void append_str(const char * s, std::vector<TransducerIndex>& v)
     }
 }
 
+#ifdef _MSC_VER
+#   define _ftell _ftelli64
+#   define _fseek _fseeki64
+#else
+#   define _ftell ftello
+#   define _fseek fseeko
+#endif
+
+void Transducer::ReadBinary(FILE* f)
+{
+    transitions_table.clear();
+    n_transitions = 0;
+    n_states = 0;
+
+    std::string first_line;
+    int c;
+    while (( c = getc(f)) != EOF && c != 0)
+    {
+        first_line.push_back(c);
+    }
+    std::istringstream iss(first_line);
+    size_t s;
+    iss >> s;
+    if (s != sizeof(TransducerIndex))
+    {
+        throw MyError("Binary file does not have the same alignment as compiled code (", s, "!=", sizeof(TransducerIndex), ")!");
+    }
+    if (c == EOF)
+        return;
+
+    if (fread(&start_state_start, sizeof(start_state_start), 1, f) != 1)
+        throw MyError("Invalid binary file format!");
+    if (fread(&start_state_end, sizeof(start_state_end), 1, f) != 1)
+        throw MyError("Invalid binary file format!");
+    s = _ftell(f);
+    if (_fseek(f, 0, SEEK_END))
+        throw MyError("Seeking failed during reading binary file!");
+    transitions_table.resize((_ftell(f) - s) / sizeof(TransducerIndex));
+    if (_fseek(f, s, SEEK_SET))
+        throw MyError("Seeking failed during reading binary file!");
+    if (fread(transitions_table.data(), sizeof(TransducerIndex), transitions_table.size(), f) != transitions_table.size())
+        throw MyError("Cannot read transition table from binary file!");
+}
+
+void Transducer::DumpBinary(FILE* f)
+{
+    std::ostringstream oss;
+    oss << sizeof(TransducerIndex);
+    if (fwrite(oss.str().c_str(), 1, oss.str().size() + 1, f) != oss.str().size() + 1)
+        throw MyError("Cannot Write binary file!");
+    
+    if (fwrite(&start_state_start, sizeof(start_state_start), 1, f) != 1)
+        throw MyError("Cannot Write binary file!");
+    if (fwrite(&start_state_end, sizeof(start_state_end), 1, f) != 1)
+        throw MyError("Cannot Write binary file!");
+    
+    if (fwrite(transitions_table.data(), sizeof(TransducerIndex), transitions_table.size(), f) != transitions_table.size())
+        throw MyError("Cannot Write binary file!");
+}
+
 void Transducer::Read(std::istream & is)
 {
     std::unordered_map<TransducerIndex, std::array<TransducerIndex, 2>> state_pointers;

@@ -7,6 +7,7 @@
 #include <regex>
 #include <unordered_map>
 #include <array>
+#include <stdio.h>
 
 #include "Utils.h"
 
@@ -23,6 +24,8 @@ public:
     Transducer();
     Transducer(std::istream& is);
     void Read(std::istream& is);
+    void ReadBinary(FILE* f);
+    void DumpBinary(FILE* f);
     //! including to finishing from a final state
     size_t GetNumberOfTransitions()const;
     //! including start state

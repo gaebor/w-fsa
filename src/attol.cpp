@@ -11,28 +11,55 @@
 int main(int argc, const char** argv)
 {
     std::string transducer_filename;
+    bool binary = false;
+    std::string dump;
     {
         arg::Parser<> parser("AT&T Optimized Lookup", { "-h", "--help" }, std::cout, std::cerr, "", 80);
 
         parser.AddArg(transducer_filename, {}, "AT&T format transducer filename", "filename");
-        
+        parser.AddFlag(binary, { "-b", "--binary" }, "read binary format");
+        parser.AddArg(dump, { "-d", "--dump" }, "after reading, dump the transducer in binary format\ndon't perform actual lookup", "filename");
+
         parser.Do(argc, argv);
     }
 try{
     Transducer t;
-    std::ifstream ifs(transducer_filename);
-    if (ifs)
-        t.Read(ifs);
-    else
+    if (binary)
     {
-        std::cerr << "Cannot read \"" << transducer_filename << "\"!" << std::endl;
-        return 1;
+        if (FILE* f = fopen(transducer_filename.c_str(), "rb"))
+            t.ReadBinary(f);
+        else
+        {
+            std::cerr << "Cannot open to read \"" << transducer_filename << "\"!" << std::endl;
+            return 1;
+        }
+    } else
+    {
+        std::ifstream ifs(transducer_filename);
+        if (ifs)
+            t.Read(ifs);
+        else
+        {
+            std::cerr << "Cannot open to read \"" << transducer_filename << "\"!" << std::endl;
+            return 1;
+        }
+        std::cerr << "Number of states (including start): " << t.GetNumberOfStates() << std::endl;
+        std::cerr << "Number of transitions (including finishing from final states): " << t.GetNumberOfTransitions() << std::endl;
     }
 
-    std::cerr << "Number of states (including start): " << t.GetNumberOfStates() << std::endl;
-    std::cerr << "Number of transitions (including finishing from final states): " << t.GetNumberOfTransitions() << std::endl;
-    std::cerr << "Memory usage (approximate): " << t.GetAllocatedMemory() << " bytes" << std::endl;
-
+    if (!dump.empty())
+    {
+        if (FILE* f = fopen(dump.c_str(), "wb"))
+        {
+            t.DumpBinary(f);
+            return 0;
+        }
+        else
+        {
+            std::cerr << "Cannot open to write \"" << dump << "\"!" << std::endl;
+            return 1;
+        }
+    }
     Transducer::ResultHandler resulthandler = [](const Transducer::Path& path)
     {
         for (auto i : path)

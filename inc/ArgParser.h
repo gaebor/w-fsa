@@ -403,7 +403,7 @@ namespace arg
         {
             PrintVal(_val, os);
         }
-        virtual void PrintRestrictions(OStream&, int width)const {}
+        virtual void PrintRestrictions(OStream&, int )const {}
         virtual void WriteShort(OStream& os)const
         {
             os << this->options[0];
