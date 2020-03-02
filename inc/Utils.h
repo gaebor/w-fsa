@@ -19,12 +19,13 @@
 #include <exception>
 #include <thread>
 #include <chrono>
+#include <limits>
 
 #include "Isatty.h"
 
-#include "mkl_types.h"
-#include "mkl_spblas.h"
-#include "mkl_dss.h"
+//#include "mkl_types.h"
+//#include "mkl_spblas.h"
+//#include "mkl_dss.h"
 
 std::pair<const char*, char> GetWord(char*& input, const char* separator= " ");
 
@@ -32,6 +33,17 @@ void PrintFixedWidth(FILE* out, double x, int width = 7);
 
 typedef const char* CStr;
 
+template<size_t width>
+struct Round
+{
+    template<class Number>
+    static Number Do(Number i)
+    {
+        static const Number mask1 = width - 1;
+        static const Number mask2 = ~mask1;
+        return (i + mask1) & mask2;
+    }
+};
 
 //! simple class to measure time, not thread safe!
 template<class ClockTy = std::chrono::steady_clock>
@@ -82,6 +94,8 @@ struct StrEq
     static const StrEq streq;
 };
 
+bool StrEq2(const char* word1, const char* word2);
+
 struct StrLess
 {
     bool operator()(const CStr& a, const CStr& b)const;
@@ -93,34 +107,17 @@ struct StrHash
     size_t operator()(const CStr& s) const;
 };
 
-template<class T>
-class Counter : public std::unordered_map<T, size_t>
-{
-public:
-    size_t operator[](const T& key)
-    {
-        return this->emplace(key, this->size()).first->second;
-    }
-};
-
-template<class T>
-struct Keyed : std::unordered_map<CStr, T, StrHash, StrEq>
-{
-};
-
-bool IsEmpty(const char* s);
-
 std::string ToStr();
 
 template<typename Arg1, typename... Args>
-std::string ToStr(const Arg1& arg1, const Args&... args)
+std::string ToStr(Arg1 arg1, Args... args)
 {
     std::ostringstream oss;
     oss << arg1;
     return oss.str() + ToStr(args...);
 }
 template<typename Arg1>
-std::string ToStr(const Arg1& arg1)
+std::string ToStr(Arg1 arg1)
 {
     std::ostringstream oss;
     oss << arg1;
@@ -131,7 +128,7 @@ class MyError : public std::exception
 {
 public:
     template<typename ...Args>
-    explicit MyError(const Args&... args)
+    explicit MyError(Args... args)
         : msg(ToStr(args...))
     {
     }
@@ -140,30 +137,70 @@ private:
     std::string msg;
 };
 
+template<class TargetType, bool enable = true>
+struct SaturateCast
+{
+    template<class SourceType>
+    static TargetType Do(SourceType i)
+    {
+        // TODO assert both numeric
+        if (enable && std::numeric_limits<SourceType>::min() < std::numeric_limits<TargetType>::min())
+        {
+            if (i < std::numeric_limits<TargetType>::min())
+                throw MyError("SaturateCast error: ", i, " of type ", typeid(SourceType).name(), " is smaller then minimum of ", typeid(TargetType).name());
+        }
+        if (enable && std::numeric_limits<SourceType>::max() > std::numeric_limits<TargetType>::max())
+        {
+            if (i > std::numeric_limits<TargetType>::max())
+                throw MyError("SaturateCast error: ", i, " of type ", typeid(SourceType).name(), " is greater then maximum of ", typeid(TargetType).name());
+        }
+        return static_cast<TargetType>(i);
+    }
+};
+
+template<class T, class Count = size_t>
+class Counter : public std::unordered_map<T, Count>
+{
+public:
+    Count operator[](const T& key)
+    {
+        return this->emplace(key, SaturateCast<Count>::Do(this->size())).first->second;
+    }
+};
+
+template<class T>
+struct Keyed : std::unordered_map<CStr, T, StrHash, StrEq>
+{
+};
+
+bool IsEmpty(const char* s);
+
 bool ReadContent(FILE* input, std::vector<char>& content);
 
-void PrintCooMtx(std::ostream& os,
-    const std::vector<double>& data,
-    const std::vector<MKL_INT>& rows,
-    const std::vector<MKL_INT>& cols);
-
-void PrintCsrMtx(FILE* f,
-    const std::vector<double>& data,
-    const std::vector<MKL_INT>& rows,
-    const std::vector<MKL_INT>& cols,
-    const std::vector<double>& rhs = std::vector<double>());
-
-void ReadCsrMtx(std::istream& is,
-    std::vector<double>& data,
-    std::vector<MKL_INT>& rows,
-    std::vector<MKL_INT>& cols);
-
-void WriteCsrMtx(std::ostream& os,
-    const std::vector<double>& data,
-    const std::vector<MKL_INT>& rows,
-    const std::vector<MKL_INT>& cols);
+//void PrintCooMtx(std::ostream& os,
+//    const std::vector<double>& data,
+//    const std::vector<MKL_INT>& rows,
+//    const std::vector<MKL_INT>& cols);
+//
+//void PrintCsrMtx(FILE* f,
+//    const std::vector<double>& data,
+//    const std::vector<MKL_INT>& rows,
+//    const std::vector<MKL_INT>& cols,
+//    const std::vector<double>& rhs = std::vector<double>());
+//
+//void ReadCsrMtx(std::istream& is,
+//    std::vector<double>& data,
+//    std::vector<MKL_INT>& rows,
+//    std::vector<MKL_INT>& cols);
+//
+//void WriteCsrMtx(std::ostream& os,
+//    const std::vector<double>& data,
+//    const std::vector<MKL_INT>& rows,
+//    const std::vector<MKL_INT>& cols);
 
 bool ContainsPrefix(const CStr& word, const CStr& prefix);
+const char* ContainsPrefix2(const char* word, const char* prefix);
+const char* GetNextUtf8Character(const char* word);
 
 double LogFactorial(size_t d);
 double LogSimplexVolume(size_t d);
@@ -343,34 +380,34 @@ Value& SortedInsert(std::vector<std::pair<Key, Value>, Allocator>& vec, const Ke
         return where->second;
 }
 
-template<typename Value>
-Value& GetCoord(const std::vector<MKL_INT>& rows, const std::vector<MKL_INT>& cols, std::vector<Value>& data, MKL_INT i, MKL_INT j)
-{
-    auto where = std::lower_bound(cols.data() + rows[i], cols.data() + rows[i + 1], j);
-    return data[where - cols.data()];
-}
-
-template<typename Value>
-Value GetCoord2(const std::vector<MKL_INT>& rows, const std::vector<MKL_INT>& cols, const std::vector<Value>& data, MKL_INT i, MKL_INT j)
-{
-    const auto begin = cols.data() + rows[i];
-    const auto end = cols.data() + rows[i + 1];
-    auto where = std::lower_bound(begin, end, j);
-    return (where == end || *where != j) ? 0.0 : data[where - cols.data()];
-}
-
-struct DssSolverHandler
-{
-    DssSolverHandler(MKL_INT solver_opt);
-    ~DssSolverHandler();
-    _MKL_DSS_HANDLE_t GetHandler()const;
-private:
-    _MKL_DSS_HANDLE_t solver_handler;
-};
-
-double RealSymmetricLogDet(const MKL_INT* const Hrow, const MKL_INT n,
-                       const MKL_INT* const Hcol, const MKL_INT nnz,
-                       const double* const Hdata, bool reorder=false);
+//template<typename Value>
+//Value& GetCoord(const std::vector<MKL_INT>& rows, const std::vector<MKL_INT>& cols, std::vector<Value>& data, MKL_INT i, MKL_INT j)
+//{
+//    auto where = std::lower_bound(cols.data() + rows[i], cols.data() + rows[i + 1], j);
+//    return data[where - cols.data()];
+//}
+//
+//template<typename Value>
+//Value GetCoord2(const std::vector<MKL_INT>& rows, const std::vector<MKL_INT>& cols, const std::vector<Value>& data, MKL_INT i, MKL_INT j)
+//{
+//    const auto begin = cols.data() + rows[i];
+//    const auto end = cols.data() + rows[i + 1];
+//    auto where = std::lower_bound(begin, end, j);
+//    return (where == end || *where != j) ? 0.0 : data[where - cols.data()];
+//}
+//
+//struct DssSolverHandler
+//{
+//    DssSolverHandler(MKL_INT solver_opt);
+//    ~DssSolverHandler();
+//    _MKL_DSS_HANDLE_t GetHandler()const;
+//private:
+//    _MKL_DSS_HANDLE_t solver_handler;
+//};
+//
+//double RealSymmetricLogDet(const MKL_INT* const Hrow, const MKL_INT n,
+//                       const MKL_INT* const Hcol, const MKL_INT nnz,
+//                       const double* const Hdata, bool reorder=false);
 
 //! iterator for iterating only on first value of pairs
 template<class Iterator>
@@ -404,19 +441,19 @@ FirstIterator<Iterator> make_first_iterator(const Iterator& it)
     return FirstIterator<Iterator>(it);
 }
 
-struct SparseMtxHandle
-{
-    sparse_matrix_t A = nullptr;
-    matrix_descr desc;
-    SparseMtxHandle();
-    explicit SparseMtxHandle(MKL_INT n, MKL_INT k, MKL_INT* rows, MKL_INT* cols, double* x);
-    ~SparseMtxHandle();
-    void Init(MKL_INT n, MKL_INT k, MKL_INT* rows, MKL_INT* cols, double* x);
-    void dot(const double *x, double *result,
-            sparse_operation_t op = SPARSE_OPERATION_NON_TRANSPOSE,
-            double alpha = 1.0, double beta = 0.0
-        )const;
-};
+//struct SparseMtxHandle
+//{
+//    sparse_matrix_t A = nullptr;
+//    matrix_descr desc;
+//    SparseMtxHandle();
+//    explicit SparseMtxHandle(MKL_INT n, MKL_INT k, MKL_INT* rows, MKL_INT* cols, double* x);
+//    ~SparseMtxHandle();
+//    void Init(MKL_INT n, MKL_INT k, MKL_INT* rows, MKL_INT* cols, double* x);
+//    void dot(const double *x, double *result,
+//            sparse_operation_t op = SPARSE_OPERATION_NON_TRANSPOSE,
+//            double alpha = 1.0, double beta = 0.0
+//        )const;
+//};
 
 //template<class Iterable>
 //void Dok2Csr(const Iterable& indices, std::vector<MKL_INT>& rows, std::vector<MKL_INT>& cols, bool include_diag = false)

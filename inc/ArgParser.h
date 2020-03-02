@@ -1,64 +1,30 @@
 #pragma once
 
 #include <typeinfo>
+#include <type_traits>
 #include <string>
 #include <cstring>
 #include <vector>
 #include <memory>
 #include <unordered_set>
-#include <iostream>
+#include <set>
 #include <sstream>
+#include <ostream>
 #include <algorithm>
+#include <functional>
+#include <utility>
 
 namespace arg
 {
-    template<class String>
-    struct StdStreams;
 
-    template<class Allocator>
-    struct StdStreams<std::basic_string<char, std::char_traits<char>, Allocator>>
+    template<class String, class OStream>
+    void PrintWidth(OStream& os,
+                const String& str, typename String::value_type separator /*= typename String::value_type('\n')*/,
+                const String& preface /*= String()*/, int width /*= 80*/)
     {
-        static std::basic_istream<char, std::char_traits<char>>& cin;
-        static std::basic_ostream<char, std::char_traits<char>>& cout;
-        static std::basic_ostream<char, std::char_traits<char>>& cerr;
-    };
-
-    template<class Allocator>
-    struct StdStreams<std::basic_string<wchar_t, std::char_traits<wchar_t>, Allocator>>
-    {
-        static std::basic_istream<wchar_t, std::char_traits<wchar_t>>& cin;
-        static std::basic_ostream<wchar_t, std::char_traits<wchar_t>>& cout;
-        static std::basic_ostream<wchar_t, std::char_traits<wchar_t>>& cerr;
-    };
-
-    template<class Allocator>
-    std::basic_istream<char, std::char_traits<char>>& StdStreams<std::basic_string<char, std::char_traits<char>, Allocator>>::cin = std::cin;
-
-    template<class Allocator>
-    std::basic_ostream<char, std::char_traits<char>>& StdStreams<std::basic_string<char, std::char_traits<char>, Allocator>>::cout = std::cout;
-
-    template<class Allocator>
-    std::basic_ostream<char, std::char_traits<char>>& StdStreams<std::basic_string<char, std::char_traits<char>, Allocator>>::cerr= std::cerr;
-
-    template<class Allocator>
-    std::basic_istream<wchar_t, std::char_traits<wchar_t>>& StdStreams<std::basic_string<wchar_t, std::char_traits<wchar_t>, Allocator>>::cin = std::wcin;
-
-    template<class Allocator>
-    std::basic_ostream<wchar_t, std::char_traits<wchar_t>>& StdStreams<std::basic_string<wchar_t, std::char_traits<wchar_t>, Allocator>>::cout = std::wcout;
-
-    template<class Allocator>
-    std::basic_ostream<wchar_t, std::char_traits<wchar_t>>& StdStreams<std::basic_string<wchar_t, std::char_traits<wchar_t>, Allocator>>::cerr = std::wcerr;
-
-
-    template<
-        class Chr = char,
-        class Traits = std::char_traits<Chr>,
-        class Allocator = std::allocator<Chr>>
-    void Print(std::basic_ostream<Chr, Traits>& os,
-                const std::basic_string<Chr, Traits, Allocator>& str, Chr separator = Chr('\n'),
-                const std::basic_string<Chr, Traits, Allocator>& preface = std::basic_string<Chr, Traits, Allocator>(), int width = 80)
-    {
+        typedef typename String::value_type Chr;
         int w = 0;
+        width = std::max(1, width - (int)preface.size());
         for (auto chr = str.begin(); chr != str.end(); )
         {
             if (*chr == separator)
@@ -67,10 +33,11 @@ namespace arg
                 w = 0;
                 ++chr;
             }
-            else if (w >= width)
+            else if (w >= width && *chr == Chr(' '))
             {
                 os << separator << preface;
                 w = 0;
+                ++chr;
             }
             else
             {
@@ -81,39 +48,202 @@ namespace arg
         }
     }
 
-    template<class String, class Chr>
-    String Convert(const Chr* c_str)
+    template<class Ty, class String>
+    String GetTypeName(const Ty& val, const String& meta)
     {
-        const String s(c_str, c_str + std::char_traits<Chr>::length(c_str));
-        return s;
+        if (meta.empty())
+        {
+            std::basic_ostringstream<typename String::value_type> buffer;
+            buffer << typeid(val).name();
+            return buffer.str();
+        }
+        else
+            return meta;
     }
 
-    template<class Ty, class String>
-    bool ReadVal(Ty& val, const String& arg)
+    template<class Ty, class Chr>
+    bool ReadVal(Ty& val, const Chr* arg)
     {
+        typedef std::basic_string<Chr> String;
         std::basic_istringstream<typename String::value_type, typename String::traits_type, typename String::allocator_type> iss;
         iss.str(arg);
         iss >> val;
-        //TODO check whether the string was fully consumed!
-        return !iss.fail();
+        return !iss.fail() && iss.eof();
     }
-
-    template<class Chr, class Traits, class Allocator, class String2>
-    bool ReadVal(std::basic_string<Chr, Traits, Allocator>& val, const String2& arg)
+    
+    template<class Chr, class Traits, class Allocator, class Chr2>
+    bool ReadVal(std::basic_string<Chr, Traits, Allocator>& val, const Chr2* arg)
     {
-        val.assign(arg.begin(), arg.end());
+        val.assign(arg, arg + std::char_traits<Chr2>::length(arg));
         return true;
     }
+    
+    template<class Chr>
+    bool ReadVal(bool& val, const Chr* arg)
+    {
+        typedef std::basic_string<Chr> String;
+        std::basic_istringstream<typename String::value_type, typename String::traits_type, typename String::allocator_type> iss;
+        iss.str(arg);
+        iss >> val;
+        if (iss.fail() || !iss.eof())
+        {
+            iss.clear();
+            iss.str(arg);
+            iss >> std::boolalpha >> val;
+            return !iss.fail();
+        }else
+            return true;
+    }
+    
+    template<class Ty, class OStream>
+    void PrintVal(const Ty& val, OStream& os)
+    {
+        os << val;
+    }
 
-    template<class String = std::string>
+    template<class Chr, class Traits, class Allocator, class OStream>
+    void PrintVal(const std::basic_string<Chr, Traits, Allocator>& val, OStream& os)
+    {
+        os << '"' << val << '"';
+    }
+    
+    template<class OStream>
+    void PrintVal(const bool& val, OStream& os)
+    {
+        const auto flag_state = os.flags();
+        os << std::boolalpha << val;
+        os.flags(flag_state);
+    }
+
+    template<class Ty, class OStream>
+    struct Checker
+    {
+        Checker() {}
+        virtual ~Checker(){};
+        virtual bool Do(const Ty&) const
+        {
+            return true;
+        }
+        
+        virtual void Print(OStream&, int)const {}
+        
+        static const Checker<Ty, OStream>* New() {return new Checker<Ty, OStream>();}
+        static const Checker<Ty, OStream>* New(Ty a);
+        static const Checker<Ty, OStream>* New(Ty a, Ty b);
+        template<class ArgList>
+        static const Checker<Ty, OStream>* New(const ArgList& list);
+        static const Checker<Ty, OStream>* New(std::function<bool(const Ty&)> cond);
+    };
+    
+    template<class Ty, class OStream>
+    struct MinMaxChecker : Checker<Ty, OStream>
+    {
+        MinMaxChecker(const Ty& a, const Ty& b)
+            : _min(a), _max(b)
+        {}
+        virtual bool Do(const Ty& val) const
+        {
+            return _min <= val && (_min >= _max || val <= _max);
+        }
+        virtual void Print(OStream& os, int width)const
+        {
+            typedef typename OStream::char_type Chr;
+            typedef std::basic_string<Chr> String;
+            std::basic_ostringstream<Chr, typename OStream::traits_type> buffer;
+            
+            buffer << "\t\t";
+            const String preface = buffer.str();
+            buffer.str(String());
+
+            buffer << "\nmin: ";
+            PrintVal(_min, buffer);
+            if (_max > _min)
+            {   
+                buffer << ", max: ";
+                PrintVal(_max, buffer);
+            }
+            PrintWidth(os, buffer.str(), Chr('\n'), preface, width);
+        }
+        const Ty _min;
+        const Ty _max;
+    };
+    template<class Ty, class OStream>
+    const Checker<Ty, OStream>* Checker<Ty, OStream>::New(Ty a, Ty b)
+    {
+        return new MinMaxChecker<Ty, OStream>(a, b);
+    }
+    template<class Ty, class OStream>
+    const Checker<Ty, OStream>* Checker<Ty, OStream>::New(Ty a)
+    {
+        return new MinMaxChecker<Ty, OStream>(a, a);
+    }
+    
+    template<class Ty, class OStream>
+    struct ChoiceChecker : Checker<Ty, OStream>
+    {
+        template<class ArgList>
+        ChoiceChecker(const ArgList& list)
+            : choices(list.begin(), list.end())
+        {}
+        virtual bool Do(const Ty& val) const
+        {
+            return choices.empty() || (choices.find(val) != choices.end());
+        }
+        virtual void Print(OStream& os, int width)const
+        {
+            typedef typename OStream::char_type Chr;
+            typedef std::basic_string<Chr> String;
+
+            if (!choices.empty())
+            {
+                std::basic_ostringstream<Chr, typename OStream::traits_type> buffer;
+                buffer << "\t\t";
+                const String preface = buffer.str();
+                buffer.str(String());
+
+                buffer << "\npossible values:";
+                for (const auto& choice : choices)
+                {
+                    buffer << ' ';
+                    PrintVal(choice, buffer);
+                }
+                PrintWidth(os, buffer.str(), Chr('\n'), preface, width);
+            }
+        }
+        const std::set<Ty> choices;
+    };
+    template<class Ty, class OStream>
+    template<class ArgList>
+    const Checker<Ty, OStream>* Checker<Ty, OStream>::New(const ArgList& list)
+    {
+        return new ChoiceChecker<Ty, OStream>(list);
+    }
+    
+    template<class Ty, class OStream>
+    struct ConditionChecker : Checker<Ty, OStream>
+    {
+        ConditionChecker(std::function<bool(const Ty&)> cond)
+            : condition(cond)
+        {}
+        virtual bool Do(const Ty& val) const
+        {
+            return condition(val);
+        }
+        const std::function<bool(const Ty&)> condition;
+    };
+    template<class Ty, class OStream>
+    const Checker<Ty, OStream>* Checker<Ty, OStream>::New(std::function<bool(const Ty&)> cond)
+    {
+        return new ConditionChecker<Ty, OStream>(cond);
+    }
+    
+    template<class String, class OStream>
     struct Argument
     {
         typedef typename String::value_type Chr;
-        typedef std::basic_ostream<Chr, typename String::traits_type> OStream;
 
-        Argument(const std::initializer_list<const Chr*>& args,
-                const String& info,
-                const String& meta = String())
+        template<class ArgList>
+        Argument(const ArgList& args, const String& info, const String& meta)
             : options(args.begin(), args.end()), _info(info), _meta(meta)
         {
         }
@@ -121,40 +251,45 @@ namespace arg
         //! writes the corresponding help
         virtual void WriteLong(OStream& os, int width = 80) const
         {
-            os << Chr('\t');
+            os << '\t';
             if (this->options.empty())
             {
-                os << _meta;
+                WriteShort(os);
             }
             else
             {
                 for (auto option : this->options)
-                    os << option << Chr(' ');
-                os << Chr('\'') << _meta << Chr('\'');
+                    os << option << ' ';
+                os << '\'' << _meta << '\'';
             }
-            os << Convert<String>(" default: ");
-            PrintVal(os);
-
-            String prefix; prefix.push_back(Chr('\t')); prefix.push_back(Chr('\t'));
-
+            os << " default: "; Print(os);
+            
+            std::basic_ostringstream<Chr> buffer;
+            buffer << "\t\t";
+            const String prefix = buffer.str();
+            
             if (!this->_info.empty())
             {
-                os << Chr('\n') << Chr('\t') << Chr('\t');
-                Print(os, this->_info, Chr('\n'), prefix, width);
+                os << "\n\t\t";
+                PrintWidth(os, this->_info, Chr('\n'), prefix, width);
             }
-            PrintChoices(os);
+            PrintRestrictions(os, width);
 
             os << std::endl;
         }
         virtual void WriteShort(OStream& os)const
         {
-            if (this->options.empty())
-                os << _meta;
-            else
-                os << this->options[0] << Chr(' ') << Chr('\'') << _meta << Chr('\'');
+            if (!this->options.empty())
+                os << this->options[0] << ' ';
+            
+            os << '\'' << _meta << '\'';
         }
         //! returns the number of arguments consumed. If 0 then the read was not successful.
-        virtual int Read(int argc, const Chr** argv)const = 0;
+        /*! writes cerr only if something went wrong.
+        */
+        virtual int Read(int argc, const Chr** argv, OStream& cerr)const = 0;
+        virtual void Print(OStream& os)const = 0;
+        virtual void PrintRestrictions(OStream& os, int width) const = 0;
 
         const std::vector<String> options;
         const String _info;
@@ -169,168 +304,106 @@ namespace arg
                     return true;
             return false;
         }
-        virtual void PrintChoices(OStream& os) const = 0;
-        virtual void PrintVal(OStream& os) const = 0;
     };
 
-    template<class Ty, class String>
-    struct TypedArgument : Argument<String>
+    template<class Ty, class String, class OStream>
+    struct TypedArgument : Argument<String, OStream>
     {
-        using typename Argument<String>::Chr;
-        using typename Argument<String>::OStream;
+        using typename Argument<String, OStream>::Chr;
 
-        TypedArgument(Ty& def_val, 
-            const std::initializer_list<const Chr*>& args = {},
-            const String& info = String(), const String& meta = String(),
-            const std::initializer_list<Ty>& choices = {})
-            :   Argument<String>(args, info, meta.empty() ? Convert<String>(typeid(_val).name()) : meta),
-                _val(def_val), _choices(choices.begin(), choices.end())
-        {
-        }
-        virtual ~TypedArgument() {}
-
-        //! returns the number of arguments consumed. If 0 then the read was not successful.
-        virtual int Read(int argc, const Chr** argv)const
-        {
-            if (argc > 0)
-            {
-                if (this->options.empty())
-                {
-                    return ReadVal<Ty, String>(_val, argv[0]) ? 1 : 0;
-                }else if (this->Match(argv[0]) && argc > 1)
-                {
-                    if (ReadVal<Ty, String>(_val, argv[1]) && (_choices.empty() || _choices.find(_val) != _choices.end()))
-                        return 2;
-                    StdStreams<String>::cerr << "At option \"" << argv[0] << "\" the argument \"" << argv[1] << "\" is not valid!" << std::endl;
-                    exit(1);
-                }
-            }
-            return 0;
-        }
-
-        virtual void PrintChoices(OStream& os)const
-        {
-            if (!_choices.empty())
-            {
-                os << Convert<String>("\n\t\tpossible values:");
-                for (const auto& choice : _choices)
-                    os << Chr(' ') << choice;
-            }
-        }
-        virtual void PrintVal(OStream& os)const
-        {
-            os << _val;
-        }
-        Ty& _val;
-        const std::unordered_set<Ty> _choices;
-    };
-
-    template<class Chr2, class String, class Traits2, class Allocator2>
-    struct TypedArgument<std::basic_string<Chr2, Traits2, Allocator2>, String> : Argument<String>
-    {
-        using typename Argument<String>::Chr;
-        using typename Argument<String>::OStream;
-        typedef std::basic_string<Chr2, Traits2, Allocator2> Ty;
-
+        template<class ArgList, class... _Valty>
         TypedArgument(Ty& def_val,
-            const std::initializer_list<const Chr*>& args = {},
-            const String& info = String(), const String& meta = String(),
-            const std::initializer_list<Ty>& choices = {})
-            : Argument<String>(args, info, meta.empty() ? Convert<String>("string") : meta),
-            _val(def_val), _choices(choices.begin(), choices.end())
+            const ArgList& args, const String& info, const String& meta,
+            _Valty... _Val)
+            : Argument<String, OStream>(args, info, GetTypeName(def_val, meta)),
+            _val(def_val), checker(Checker<Ty, OStream>::New(_Val...))
         {
         }
         virtual ~TypedArgument() {}
 
-        //! returns the number of arguments consumed. If 0 then the read was not successful.
-        virtual int Read(int argc, const Chr** argv)const
+        virtual int Read(int argc, const Chr** argv, OStream& cerr)const
         {
+            int ret = 0;
+            if (!this->options.empty())
+            {
+                if (this->Match(argv[0]))
+                {
+                    ++argv;
+                    --argc;
+                    ++ret;
+                }else
+                    return 0;
+            }
+            
             if (argc > 0)
             {
-                if (this->options.empty())
+                Ty val;
+                if (ReadVal(val, argv[0]) && checker->Do(val))
                 {
-                    _val.assign(argv[0], argv[0] + String::traits_type::length(argv[0]));
-                    if (_choices.empty() || _choices.find(_val) != _choices.end())
-                        return 1;
-                    
-                    StdStreams<String>::cerr << Convert<String>("At option \"");
-                    this->WriteShort(StdStreams<String>::cerr);
-                    StdStreams<String>::cerr << Convert<String>("\" the argument \"") << argv[0] << Convert<String>("\" is not valid!");
-                    this->PrintChoices(StdStreams<String>::cerr);
-                    exit(1);
+                    ++ret;
+                    std::swap(_val, val);
                 }
-                else if (this->Match(argv[0]) && argc > 1)
+                else
                 {
-                    _val.assign(argv[1], argv[1] + String::traits_type::length(argv[1]));
-                    if (_choices.empty() || _choices.find(_val) != _choices.end())
-                        return 2;
-
-                    StdStreams<String>::cerr << Convert<String>("At option \"");
-                    this->WriteShort(StdStreams<String>::cerr);
-                    StdStreams<String>::cerr << Convert<String>("\" the argument \"") << argv[1] << Convert<String>("\" is not valid!");
-                    this->PrintChoices(StdStreams<String>::cerr);
-                    exit(1);
+                    cerr << "At option ";
+                    this->WriteShort(cerr);
+                    cerr << " the argument \"" << argv[0] << "\" is not valid!";
+                    this->PrintRestrictions(cerr, 80);
+                    cerr << std::endl;
+                    return -1;
                 }
-            }
-            return 0;
-        }
-
-        virtual void PrintChoices(OStream& os)const
-        {
-            if (!_choices.empty())
+            } else
             {
-                auto buffer = Convert<String>("\n\t\tpossible values:");
-                os << buffer;
-                for (const auto& choice : _choices)
-                {
-                    buffer.assign(choice.begin(), choice.end());
-                    os << Chr(' ') << Chr('"') << buffer << Chr('"');
-                }
+                cerr << "Option ";
+                this->WriteShort(cerr);
+                cerr << " requires an argument!" << std::endl;
+                return -1;
             }
+            return ret;
         }
-        virtual void PrintVal(OStream& os)const
+        
+        virtual void Print(OStream& os)const
         {
-            const String buffer(_val.begin(), _val.end());
-            os << Chr('"') << buffer << Chr('"');
+            PrintVal(_val, os);
+        }
+
+        virtual void PrintRestrictions(OStream& os, int width)const
+        {
+            checker->Print(os, width);
         }
         Ty& _val;
-        const std::unordered_set<Ty> _choices;
+        std::unique_ptr<const Checker<Ty, OStream>> checker;
     };
 
-    template<class String>
-    struct SetFlag : Argument<String>
+    template<class String, class OStream>
+    struct SetFlag : Argument<String, OStream>
     {
-        using typename Argument<String>::Chr;
-        using typename Argument<String>::OStream;
+        using typename Argument<String, OStream>::Chr;
 
+        template<class ArgList>
         SetFlag(bool& def_val,
-            const std::initializer_list<const Chr*>& args = {},
-            const String& info = String(), bool reset=false, const String& meta = String())
-            : Argument<String>(args, info, meta.empty() ? "flag" : meta),
+            const ArgList& args,
+            const String& info, bool reset, const String& meta)
+            : Argument<String, OStream>(args, info, GetTypeName(def_val, meta)),
                 _val(def_val), _reset(reset)
         {
         }
         virtual ~SetFlag() {}
-        virtual void PrintVal(OStream& os)const
-        {
-            os << (_val ? "true" : "false");
-        }
         //! returns the number of arguments consumed. If 0 then the read was not successful.
-        virtual int Read(int argc, const Chr** argv)const
+        virtual int Read(int argc, const Chr** argv, OStream& )const
         {
-            if (argc > 0)
+            if (argc > 0 && this->Match(argv[0]))
             {
-                if (this->Match(argv[0]))
-                {
-                    _val = _reset ? false : true;
-                    return 1;
-                }
+                _val = _reset ? false : true;
+                return 1;
             }
             return 0;
         }
-        virtual void PrintChoices(OStream& )const
+        virtual void Print(OStream& os)const
         {
+            PrintVal(_val, os);
         }
+        virtual void PrintRestrictions(OStream&, int width)const {}
         virtual void WriteShort(OStream& os)const
         {
             os << this->options[0];
@@ -339,27 +412,46 @@ namespace arg
         const bool _reset;
     };
 
-    //! TODO: line break, optional, default and intentional, too
-    //! TODO range checking functions!
-    template<class String = std::string>
+    typedef std::initializer_list<const char*> list;
+    typedef std::initializer_list<const wchar_t*> wlist;
+
+    template<class String = std::string, bool strict = true, class OStream = std::ostream>
     class Parser
     {
         typedef typename String::value_type Chr;
-        typedef std::basic_ostream<Chr, typename String::traits_type> OStream;
+        static_assert(std::is_base_of<std::basic_ostream<Chr, typename String::traits_type>, OStream>::value, "OStream type should be child of std::basic_ostream");
+        bool fail()const
+        {
+            if (strict)
+                exit(1);
+            else
+                return false;
+            return true;
+        }
+        bool succeed()const
+        {
+            if (strict)
+                exit(0);
+            return true;
+        }
+
     public:
+        template<class ArgList = std::initializer_list<String>>
         Parser(const String& header,
-                const std::initializer_list<const Chr*>& helps,
+                const ArgList& helps,
+                OStream& cout, OStream& cerr,
                 const String& footer = String(),
-                int width = 80, bool strict=false)
+                int width = 80)
             :   positional_arguments(), optional_arguments(),
+                cout(cout), cerr(cerr),
                 help_options(helps.begin(), helps.end()), _options(),
                 program_name(), header(header), footer(footer),
-                width(width), strict(strict)
+                width(width)
         {
         }
         ~Parser() {}
 
-        void Do(int argc, const Chr** argv)
+        bool Do(int argc, const Chr** argv)
         {
             auto positional = positional_arguments.begin();
             program_name = argv[0];
@@ -369,14 +461,14 @@ namespace arg
                 {
                     if (help == *argv)
                     {
-                        HelpLong(StdStreams<String>::cout);
-                        exit(0);
+                        HelpLong(cout);
+                        return succeed();
                     }
                 }
                 bool found = false;
                 for (const auto& argument : optional_arguments)
                 {
-                    const auto read = argument->Read(argc, argv);
+                    const auto read = argument->Read(argc, argv, cerr);
                     if (read > 0)
                     {
                         argc -= read;
@@ -389,20 +481,21 @@ namespace arg
                 {
                     if (positional != positional_arguments.end())
                     {
-                        const auto read = (*positional)->Read(argc, argv);
+                        const auto read = (*positional)->Read(argc, argv, cerr);
+                        if (read < 0)
+                        {
+                            HelpShort(cerr << std::endl);
+                            return fail();
+                        }
                         argc -= read;
                         argv += read;
                         ++positional;
                     }
                     else
                     {
-                        StdStreams<String>::cerr << Convert<String>("Unknown argument: \"") << *argv << Chr('\"') << std::endl;
-                        if (strict)
-                        {
-                            StdStreams<String>::cerr << std::endl;
-                            HelpShort(StdStreams<String>::cerr);
-                            exit(1);
-                        }
+                        cerr << "Unknown argument: \"" << *argv << '\"' << std::endl;
+                        HelpShort(cerr << std::endl);
+                        fail(); // only if 'strict'
                         ++argv;
                         --argc;
                     }
@@ -410,114 +503,122 @@ namespace arg
             }
             if (positional != positional_arguments.end())
             {
-                StdStreams<String>::cerr << Convert<String>("Positional argument \"");
-                (*positional)->WriteShort(StdStreams<String>::cerr);
-                StdStreams<String>::cerr << Convert<String>("\" was not provided!\n") << std::endl;
-                HelpShort(StdStreams<String>::cerr);
-                exit(1);
+                cerr << "Positional argument ";
+                (*positional)->WriteShort(cerr);
+                cerr << " was not provided!\n" << std::endl;
+                HelpShort(cerr);
+                return fail();
             }
+            return true;
         }
-        void HelpShort(OStream& os = std::cout) const
+        void HelpShort(OStream& os) const
         {
-            os << Convert<String>("HELP:\n") << program_name;
+            os << "HELP:\n" << program_name;
             for (const auto& h : help_options)
-                os << Chr(' ') << h;
+                os << ' ' << h;
 
-            os << Convert<String>("\n\nUSAGE:\n") << program_name;
+            os << "\n\nUSAGE:\n" << program_name;
             for (const auto& argument : positional_arguments)
             {
-                os << Chr(' ');
+                os << ' ';
                 argument->WriteShort(os);
             }
             for (const auto& argument : optional_arguments)
             {
-                os << Chr(' ') << Chr('[');
+                os << " [";
                 argument->WriteShort(os);
-                os << Chr(']');
+                os << ']';
             }
             os << std::endl;
         }
-        void HelpLong(OStream& os = std::cout) const
+        void HelpLong(OStream& os) const
         {
             if (!header.empty())
             {
-                Print(os, header, Chr('\n'), String(), width);
+                PrintWidth(os, header, Chr('\n'), String(), width);
                 os << Chr('\n');
             }
-            os << Convert<String>("\nPOSITIONALS:\n");
+            os << "\nPOSITIONALS:\n";
             for (const auto& argument : positional_arguments)
-                argument->WriteLong(os);
+                argument->WriteLong(os, width);
 
-            os << Convert<String>("\nOPTIONS:\n");
+            os << "\nOPTIONALS:\n";
             for (const auto& argument : optional_arguments)
-                argument->WriteLong(os);
+                argument->WriteLong(os, width);
 
             if (!footer.empty())
             {
-                os << Chr('\n');
-                Print(os, footer, Chr('\n'), String(), width);
-                os << Chr('\n');
+                os << '\n';
+                PrintWidth(os, footer, Chr('\n'), String(), width);
+                os << '\n';
             }
         }
-        template <class Ty>
-        void AddArg(Ty& value,
-            const std::initializer_list<const Chr*>& args = {},
+        
+        template <class Ty, class ArgList = std::initializer_list<String>, class ...Vargs>
+        bool AddArg(Ty& value,
+            const ArgList& args = ArgList(),
             const String& info = String(), const String& meta = String(),
-            const std::initializer_list<Ty>& choices = {})
+            Vargs ...vargs)
         {
+            typedef TypedArgument<Ty, String, OStream> ArgType;
+            std::unique_ptr<ArgType> arg(new ArgType(value, args, info, meta, vargs...));
             if (args.size() == 0)
             {
-                positional_arguments.emplace_back(new TypedArgument<Ty, String>(value, args, info, meta, choices));
+                positional_arguments.emplace_back(std::move(arg));
+                return true;
             }
             else
             {
-                optional_arguments.emplace_back(new TypedArgument<Ty, String>(value, args, info, meta, choices));
-                if (choices.size() > 0 &&
-                    std::find(choices.begin(), choices.end(), value) == choices.end())
-                {   // has restrictions but the initial value does not match.
-                    // the initial value is not within choices
-                    StdStreams<String>::cerr << Convert<String>("Default value ");
-                    optional_arguments.back()->PrintVal(StdStreams<String>::cerr);
-                    StdStreams<String>::cerr << Convert<String>(" is not allowed for '") << *args.begin() << Chr('\'');
-                    optional_arguments.back()->PrintChoices(StdStreams<String>::cerr);
-                    StdStreams<String>::cerr << std::endl;
-                    exit(1);
+                if (!arg->checker->Do(value))
+                {
+                    cerr << "Default value ";
+                    arg->Print(cerr);
+                    cerr << " is not allowed for '" << *args.begin() << '\'';
+                    arg->PrintRestrictions(cerr, width);
+                    cerr << std::endl;
+                    return fail();
                 }
-                CheckLastArgumentOptions();
+                return AddCheckedArgument(arg);
             }
         }
-        void AddFlag(bool& value,
-            const std::initializer_list<const Chr*>& args = {},
+
+        template<class ArgList = std::initializer_list<String>>
+        bool AddFlag(bool& value,
+            const ArgList& args = ArgList(),
             const String& info = String(), bool reset=false, const String& meta = String())
         {
             if (args.size() == 0)
             {
-                StdStreams<String>::cerr << Convert<String>("Boolean (flag) argument cannot be positional!") << std::endl;
-                exit(1);
+                cerr << "Boolean (flag) argument cannot be positional!" << std::endl;
+                return fail();
             }
-            optional_arguments.emplace_back(new SetFlag<String>(value, args, info, reset, meta));
-            CheckLastArgumentOptions();
+            std::unique_ptr<Argument<String, OStream>> arg(new SetFlag<String, OStream>(value, args, info, reset, meta));
+            return AddCheckedArgument(arg);
         }
 
     private:
-        void CheckLastArgumentOptions()
+        template<class Ptr>
+        bool AddCheckedArgument(Ptr& arg)
         {
-            for (const auto& option : optional_arguments.back()->options)
+            for (const auto& option : arg->options)
             {
-                if (!_options.insert(option).second)
+                if (_options.find(option) != _options.end())
                 {
-                    StdStreams<String>::cerr << Convert<String>("Duplicate option: \"") << option << Chr('\"') << std::endl;
-                    exit(1);
+                    cerr << "Duplicate option: \"" << option << '\"' << std::endl;
+                    return fail();
                 }
             }
+            _options.insert(arg->options.begin(), arg->options.end());
+            optional_arguments.emplace_back(std::move(arg));
+            return true;
         }
-        std::vector<std::unique_ptr<Argument<String>>> positional_arguments;
-        std::vector<std::unique_ptr<Argument<String>>> optional_arguments;
+        std::vector<std::unique_ptr<Argument<String, OStream>>> positional_arguments;
+        std::vector<std::unique_ptr<Argument<String, OStream>>> optional_arguments;
+        OStream &cout, &cerr;
         std::vector<String> help_options;
         std::unordered_set<String> _options;
         String program_name;
         String header, footer;
         int width;
-        bool strict;
     };
 }
