@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include "Utils.h"
+#include "FlagDiacritics.h"
 
 Transducer::Transducer() { }
 
@@ -148,6 +149,8 @@ void Transducer::Read(std::istream & is)
                 // these will end up deleting from input tape anyway
                 // we don't care what will happen to output tape!
                 input.clear();
+            //else if (FlagDiacritics::IsIt(input.c_str()))
+            //    fd_table.Read(input.c_str());
             break;
         };
         if (previous_state != from)
@@ -208,19 +211,14 @@ size_t Transducer::GetAllocatedMemory() const
     return sizeof(TransducerIndex)*transitions_table.size();
 }
 
-void Transducer::Lookup(const char* s, ResultHandler resulth, double time_l, size_t max_r, bool utf8)
+void Transducer::Lookup(const char* s, const ResultHandler& resulth, double time_l, size_t max_r)
 {
     max_results = max_r;
-    resulthandler = resulth;
+    resulthandler = &resulth;
     time_limit = time_l;
     clock.Tick();
     n_results = 0;
     path.clear();
-
-    if (utf8)
-        GetNextChar = GetNextUtf8Character;
-    else
-        GetNextChar = Next;
 
     lookup(s, start_state_start, start_state_end);
 }
@@ -242,7 +240,9 @@ void Transducer::lookup(const char* s, TransducerIndex beg, const TransducerInde
         {   //final state
             if (*s == '\0')
             {   // that's a result
-                resulthandler(path);
+                path.emplace_back(id);
+                (*resulthandler)(path);
+                path.pop_back();
             }
         }
         else if (StrEq2(input, "@_UNKNOWN_SYMBOL_@") || StrEq2(input, "@_IDENTITY_SYMBOL_@"))
@@ -254,12 +254,15 @@ void Transducer::lookup(const char* s, TransducerIndex beg, const TransducerInde
         // 
         // epsilon is handled with a simple empty string
         // 
-        else if (input[0] == '@' && input[2] == '.' && 
-            (input[1] == 'P' || input[1] == 'N' || input[1] == 'D' || input[1] == 'R' || input[1] == 'C' || input[1] == 'U') &&
-            input[3] != '\0')
-        {   // TODO implement flags
-            path.emplace_back(id);
-            lookup(s, to_beg, to_end);
+        else if (FlagDiacritics::IsIt(input))
+        {
+            FlagDiacritics::State flagsate = fd_state;
+            if (FlagDiacritics::Apply(input, fd_state))
+            {
+                path.emplace_back(id);
+                lookup(s, to_beg, to_end);
+            }
+            fd_state = flagsate;
         }
         else if (const char* next = ContainsPrefix2(s, input))
         {   // a lead to follow

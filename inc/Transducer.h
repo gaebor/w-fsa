@@ -10,6 +10,7 @@
 #include <stdio.h>
 
 #include "Utils.h"
+#include "FlagDiacritics.h"
 
 #ifndef ATTOL_NUMBER
 typedef unsigned int TransducerIndex;
@@ -35,7 +36,7 @@ public:
     typedef std::vector<TransducerIndex> Path;
     typedef std::function<void(const Path&)> ResultHandler;
 
-    void Lookup(const char* s, ResultHandler resulthandler, double time_limit = 0.0, size_t max_results = -1, bool utf8 = true);
+    void Lookup(const char* s, const ResultHandler& resulthandler, double time_limit = 0.0, size_t max_results = -1);
 private:
     std::vector<TransducerIndex> transitions_table;
     TransducerIndex start_state_start, start_state_end;
@@ -44,7 +45,7 @@ private:
     Path path;
     size_t max_results;
     size_t n_results;
-    ResultHandler resulthandler;
+    const ResultHandler* resulthandler;
     double time_limit;
     Clock<> clock;
 
@@ -53,5 +54,7 @@ private:
     static const char* Next(const char* x) { return x + 1; }
 
     void lookup(const char* s, TransducerIndex beg, const TransducerIndex end);
+
+    FlagDiacritics::State fd_state;
 
 };

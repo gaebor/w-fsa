@@ -80,7 +80,7 @@ try{
         has_analysis = true;
     };
 
-    while (std::cin >> word)
+    while (std::getline(std::cin, word))
     {
         has_analysis = false;
         t.Lookup(word.c_str(), resulthandler);
