@@ -7,9 +7,14 @@
 #include "ArgParser.h"
 #include "Transducer.h"
 #include "Utils.h"
+#include "Isatty.h"
 
 int main(int argc, const char** argv)
 {
+    // @see http://juditacs.github.io/2015/11/26/wordcount.html
+    if (!IsTty(stdout))
+        std::ios_base::sync_with_stdio(false);
+
     std::string transducer_filename;
     bool binary = false;
     std::string dump;

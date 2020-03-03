@@ -211,7 +211,7 @@ void ProgressIndicator(T begin, T* p, F factor, const char* fmt,
 {
     bool run = true;
     std::thread progress;
-    if (IsStderrTty())
+    if (IsTty(stderr))
     {
         progress = std::thread([&]()
         {

@@ -172,10 +172,11 @@ void Transducer::Read(std::istream & is)
     {
         const auto& to = *(i + 2);
         if (to == std::numeric_limits<TransducerIndex>::max())
-        {//final state has a MAXINT destination
+        {   //final state has a MAXINT destination
             *(i + 1) = std::numeric_limits<TransducerIndex>::max();
         }else
-        {
+        {   // TODO it may happen that the to state is not in state_pointers
+            // "dead end" or "dangling edge"
             *(i + 1) = state_pointers[to][0];
             *(i + 2) = state_pointers[to][1];
         }
@@ -187,8 +188,9 @@ void Transducer::Read(std::istream & is)
         }
     }
 
-    start_state_start = state_pointers[0][0];
-    start_state_end = state_pointers[0][1];
+    // supposing that the START is "0"
+    start_state_start = state_pointers[states["0"]][0];
+    start_state_end = state_pointers[states["0"]][1];
 }
 
 size_t Transducer::GetNumberOfTransitions() const
@@ -245,6 +247,7 @@ void Transducer::lookup(const char* s, TransducerIndex beg, const TransducerInde
         }
         else if (StrEq2(input, "@_UNKNOWN_SYMBOL_@") || StrEq2(input, "@_IDENTITY_SYMBOL_@"))
         {   // consume one character
+            // TODO this can be hastened is the special symbols are shorter!
             path.emplace_back(id);
             lookup(GetNextUtf8Character(s), to_beg, to_end);
         }

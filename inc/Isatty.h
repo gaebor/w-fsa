@@ -1,2 +1,3 @@
+#include <stdio.h>
 
-bool IsStderrTty();
+bool IsTty(FILE* f);

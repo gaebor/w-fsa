@@ -1,19 +1,16 @@
-#include <Isatty.h>
-
-#include <stdio.h>
+#include "Isatty.h"
 
 #ifdef _MSC_VER
 #include <io.h>
-
-bool IsStderrTty()
+bool IsTty(FILE* f)
 {
-    return _isatty(_fileno(stderr));
+    return _isatty(_fileno(f));
 }
 #else
 #include <unistd.h>
-bool IsStderrTty()
+bool IsTty(FILE* f)
 {
-    return isatty(fileno(stderr));
+    return isatty(fileno(f));
 }
 
 #endif // _MSCVER
