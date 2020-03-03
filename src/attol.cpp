@@ -16,9 +16,9 @@ int main(int argc, const char** argv)
     {
         arg::Parser<> parser("AT&T Optimized Lookup", { "-h", "--help" }, std::cout, std::cerr, "", 80);
 
-        parser.AddArg(transducer_filename, {}, "AT&T format transducer filename", "filename");
-        parser.AddFlag(binary, { "-b", "--binary" }, "read binary format");
-        parser.AddArg(dump, { "-d", "--dump" }, "after reading, dump the transducer in binary format\ndon't perform actual lookup", "filename");
+        parser.AddArg(transducer_filename, {}, "AT&T (text) format transducer filename", "filename");
+        parser.AddFlag(binary, { "-b", "--binary" }, "read ATTOL binary format instead of text");
+        parser.AddArg(dump, { "-d", "--dump" }, "after reading, dump the transducer in ATTOL binary format\ndon't perform actual lookup", "filename");
 
         parser.Do(argc, argv);
     }
@@ -60,19 +60,30 @@ try{
             return 1;
         }
     }
-    Transducer::ResultHandler resulthandler = [](const Transducer::Path& path)
+    bool has_analysis = false;
+    std::string word;
+
+    Transducer::ResultHandler resulthandler = [&](const Transducer::Path& path)
     {
+        fputs(word.c_str(), stdout);
+        putc(' ', stdout);
         for (auto i : path)
         {
             printf("%u ", i);
         }
         putc('\n', stdout);
+        has_analysis = true;
     };
 
-    std::string word;
     while (std::cin >> word)
     {
+        has_analysis = false;
         t.Lookup(word.c_str(), resulthandler);
+        if (!has_analysis)   
+        {
+            fputs(word.c_str(), stdout);
+            puts(" ?");
+        }
         putc('\n', stdout);
     }
 

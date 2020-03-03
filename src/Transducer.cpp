@@ -144,7 +144,9 @@ void Transducer::Read(std::istream & is)
             // ordinary transition
             to = states[parts[1]];
             input = parts[2];
-            if (input == "@0@" || input == "@_EPSILON_SYMBOL_@" )
+            if (input == "@0@" || input == "@_EPSILON_SYMBOL_@")
+                // these will end up deleting from input tape anyway
+                // we don't care what will happen to output tape!
                 input.clear();
             break;
         };
@@ -241,16 +243,17 @@ void Transducer::lookup(const char* s, TransducerIndex beg, const TransducerInde
                 resulthandler(path);
             }
         }
-        else if(StrEq::streq("@_IDENTITY_SYMBOL_@", input))
-        {   // consume one character unconditionally
+        else if (StrEq2(input, "@_UNKNOWN_SYMBOL_@") || StrEq2(input, "@_IDENTITY_SYMBOL_@"))
+        {   // consume one character
             path.emplace_back(id);
-            lookup(GetNextChar(s), to_beg, to_end);
+            lookup(GetNextUtf8Character(s), to_beg, to_end);
         }
         // 
         // epsilon is handled with a simple empty string
         // 
         else if (input[0] == '@' && input[2] == '.' && 
-            (input[1] == 'P' || input[1] == 'N' || input[1] == 'D' || input[1] == 'R' || input[1] == 'C' || input[1] == 'U'))
+            (input[1] == 'P' || input[1] == 'N' || input[1] == 'D' || input[1] == 'R' || input[1] == 'C' || input[1] == 'U') &&
+            input[3] != '\0')
         {   // TODO implement flags
             path.emplace_back(id);
             lookup(s, to_beg, to_end);
