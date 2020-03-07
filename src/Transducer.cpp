@@ -48,6 +48,14 @@ static void append_str(const char * s, std::vector<TransducerIndex>& v)
     }
 }
 
+thread_local size_t max_results;
+thread_local size_t max_depth;
+thread_local size_t n_results;
+thread_local Transducer::Path path;
+thread_local FlagDiacritics::State fd_state;
+thread_local Clock<> myclock;
+thread_local double time_limit;
+
 #ifdef _MSC_VER
 #   define _ftell _ftelli64
 #   define _fseek _fseeki64
@@ -211,14 +219,17 @@ size_t Transducer::GetAllocatedMemory() const
     return sizeof(TransducerIndex)*transitions_table.size();
 }
 
-void Transducer::Lookup(const char* s, const ResultHandler& resulth, double time_l, size_t max_r)
+void Transducer::Lookup(const char* s, const ResultHandler& resulth, double time_l, size_t max_r, size_t max_d)
 {
     max_results = max_r;
-    resulthandler = &resulth;
-    time_limit = time_l;
-    clock.Tick();
+    max_depth = max_d;
+    time_limit = time_l;   
     n_results = 0;
     path.clear();
+    fd_state.clear();
+    myclock.Tick();
+
+    resulthandler = &resulth;
 
     lookup(s, start_state_start, start_state_end);
 }
@@ -228,6 +239,9 @@ void Transducer::Lookup(const char* s, const ResultHandler& resulth, double time
 
 void Transducer::lookup(const char* s, TransducerIndex beg, const TransducerIndex end)
 {
+    if ((max_results == 0 || n_results < max_results) && 
+        (max_depth == 0 || path.size() < max_depth) &&
+        (time_limit == 0 || myclock.Tock() < time_limit))
     for (; beg < end; ++beg)
     {   // try outgoing edges
         const auto id = transitions_table[beg];
@@ -240,6 +254,7 @@ void Transducer::lookup(const char* s, TransducerIndex beg, const TransducerInde
         {   //final state
             if (*s == '\0')
             {   // that's a result
+                ++n_results;
                 path.emplace_back(id);
                 (*resulthandler)(path);
                 path.pop_back();
@@ -247,7 +262,7 @@ void Transducer::lookup(const char* s, TransducerIndex beg, const TransducerInde
         }
         else if (StrEq2(input, "@_UNKNOWN_SYMBOL_@") || StrEq2(input, "@_IDENTITY_SYMBOL_@"))
         {   // consume one character
-            // TODO this can be hastened is the special symbols are shorter!
+            // TODO this can be hastened if the special symbols are shorter!
             path.emplace_back(id);
             lookup(GetNextUtf8Character(s), to_beg, to_end);
         }

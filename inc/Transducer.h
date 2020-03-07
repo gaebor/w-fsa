@@ -36,25 +36,13 @@ public:
     typedef std::vector<TransducerIndex> Path;
     typedef std::function<void(const Path&)> ResultHandler;
 
-    void Lookup(const char* s, const ResultHandler& resulthandler, double time_limit = 0.0, size_t max_results = -1);
+    void Lookup(const char* s, const ResultHandler& resulthandler, double time_limit = 0.0, size_t max_results = 0, size_t max_depth = 0);
 private:
     std::vector<TransducerIndex> transitions_table;
     TransducerIndex start_state_start, start_state_end;
     size_t n_transitions, n_states;
-
-    Path path;
-    size_t max_results;
-    size_t n_results;
+    
     const ResultHandler* resulthandler;
-    double time_limit;
-    Clock<> clock;
-
-    const char* (*GetNextChar)(const char*);
-
-    static const char* Next(const char* x) { return x + 1; }
-
     void lookup(const char* s, TransducerIndex beg, const TransducerIndex end);
-
-    FlagDiacritics::State fd_state;
 
 };

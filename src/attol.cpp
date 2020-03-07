@@ -16,6 +16,8 @@ int main(int argc, const char** argv)
         std::ios_base::sync_with_stdio(false);
 
     std::string transducer_filename, input_filename, output_filename;
+    double time_limit = 0.0;
+    size_t max_depth = 0, max_results = 0;
     bool binary = false;
     std::string dump;
     {
@@ -23,9 +25,12 @@ int main(int argc, const char** argv)
 
         parser.AddArg(transducer_filename, {}, "AT&T (text) format transducer filename", "filename");
         parser.AddFlag(binary, { "-b", "--binary" }, "read ATTOL binary format instead of text");
-        parser.AddArg(dump, { "-d", "--dump" }, "after reading, dump the transducer in ATTOL binary format\ndon't perform actual lookup", "filename");
+        parser.AddArg(dump, { "-w", "--write", "--dump" }, "after reading, dump the transducer in ATTOL binary format\ndon't perform actual lookup", "filename");
         parser.AddArg(input_filename, { "-i", "--input" }, "input file to analyze, stdin if empty", "filename");
         parser.AddArg(output_filename, { "-o", "--output" }, "output file, stdout if empty", "filename");
+        parser.AddArg(time_limit, { "-t", "--time" }, "time limit (in seconds) when not to search further\nunlimited if set to 0");
+        parser.AddArg(max_results, { "-n" }, "max number of results for one word\nunlimited if set to 0");
+        parser.AddArg(max_depth, { "-d", "--depth" }, "maximum depth to go down during lookup\nunlimited if set to 0");
         parser.Do(argc, argv);
     }
 try{
@@ -95,7 +100,7 @@ try{
         while ((c = fgetc(input)) != EOF && c != '\n' && c != '\0')
             word.push_back(static_cast<char>(c));
         has_analysis = false;
-        t.Lookup(word.c_str(), resulthandler);
+        t.Lookup(word.c_str(), resulthandler, time_limit, max_results, max_depth);
         if (!has_analysis)
         {
             fputs(word.c_str(), output);
