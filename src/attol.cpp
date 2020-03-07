@@ -15,7 +15,7 @@ int main(int argc, const char** argv)
     if (!IsTty(stdout))
         std::ios_base::sync_with_stdio(false);
 
-    std::string transducer_filename;
+    std::string transducer_filename, input_filename, output_filename;
     bool binary = false;
     std::string dump;
     {
@@ -24,7 +24,8 @@ int main(int argc, const char** argv)
         parser.AddArg(transducer_filename, {}, "AT&T (text) format transducer filename", "filename");
         parser.AddFlag(binary, { "-b", "--binary" }, "read ATTOL binary format instead of text");
         parser.AddArg(dump, { "-d", "--dump" }, "after reading, dump the transducer in ATTOL binary format\ndon't perform actual lookup", "filename");
-
+        parser.AddArg(input_filename, { "-i", "--input" }, "input file to analyze, stdin if empty", "filename");
+        parser.AddArg(output_filename, { "-o", "--output" }, "output file, stdout if empty", "filename");
         parser.Do(argc, argv);
     }
 try{
@@ -65,31 +66,42 @@ try{
             return 1;
         }
     }
-    bool has_analysis = false;
     std::string word;
 
+    FILE* input = input_filename.empty() ? stdin : fopen(input_filename.c_str(), "r");
+    if (!input)
+        throw MyError("Unable to open input file \"", input_filename, "\"!");
+    
+    FILE* output = output_filename.empty() ? stdout : fopen(output_filename.c_str(), "w");
+    if (!output)
+        throw MyError("Unable to open output file \"", output_filename, "\"!");
+    
+    bool has_analysis;
     Transducer::ResultHandler resulthandler = [&](const Transducer::Path& path)
     {
-        fputs(word.c_str(), stdout);
-        putc(' ', stdout);
+        fputs(word.c_str(), output);
         for (auto i : path)
         {
-            printf("%u ", i);
+            fprintf(output, " %u", i);
         }
-        putc('\n', stdout);
+        putc('\n', output);
         has_analysis = true;
     };
 
-    while (std::getline(std::cin, word))
+    int c = ~EOF;
+    while (c != EOF)
     {
+        word.clear();
+        while ((c = fgetc(input)) != EOF && c != '\n' && c != '\0')
+            word.push_back(static_cast<char>(c));
         has_analysis = false;
         t.Lookup(word.c_str(), resulthandler);
-        if (!has_analysis)   
+        if (!has_analysis)
         {
-            fputs(word.c_str(), stdout);
-            puts(" ?");
+            fputs(word.c_str(), output);
+            fputs(" ?\n", output);
         }
-        putc('\n', stdout);
+        putc('\n', output);
     }
 
     return 0;

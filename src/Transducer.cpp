@@ -66,7 +66,7 @@ void Transducer::ReadBinary(FILE* f)
     int c;
     while (( c = getc(f)) != EOF && c != 0)
     {
-        first_line.push_back(c);
+        first_line.push_back(static_cast<char>(c));
     }
     std::istringstream iss(first_line);
     size_t s;
