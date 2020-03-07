@@ -36,7 +36,7 @@ public:
     typedef std::vector<TransducerIndex> Path;
     typedef std::function<void(const Path&)> ResultHandler;
 
-    void Lookup(const char* s, const ResultHandler& resulthandler, double time_limit = 0.0, size_t max_results = -1);
+    bool Lookup(const char* s, const ResultHandler& resulthandler, double time_limit = 0.0, size_t max_results = -1);
 private:
     std::vector<TransducerIndex> transitions_table;
     TransducerIndex start_state_start, start_state_end;

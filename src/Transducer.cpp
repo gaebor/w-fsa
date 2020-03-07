@@ -7,6 +7,7 @@
 
 #include "Utils.h"
 #include "FlagDiacritics.h"
+#include "lookup.h"
 
 Transducer::Transducer() { }
 
@@ -66,7 +67,7 @@ void Transducer::ReadBinary(FILE* f)
     int c;
     while (( c = getc(f)) != EOF && c != 0)
     {
-        first_line.push_back(c);
+        first_line.push_back(static_cast<char>(c));
     }
     std::istringstream iss(first_line);
     size_t s;
@@ -211,7 +212,9 @@ size_t Transducer::GetAllocatedMemory() const
     return sizeof(TransducerIndex)*transitions_table.size();
 }
 
-void Transducer::Lookup(const char* s, const ResultHandler& resulth, double time_l, size_t max_r)
+extern Context* self;
+
+bool Transducer::Lookup(const char* s, const ResultHandler& resulth, double time_l, size_t max_r)
 {
     max_results = max_r;
     resulthandler = &resulth;
@@ -220,7 +223,15 @@ void Transducer::Lookup(const char* s, const ResultHandler& resulth, double time
     n_results = 0;
     path.clear();
 
-    lookup(s, start_state_start, start_state_end);
+    Context self;
+    self.size = 0;
+    self.table = transitions_table.data();
+    self.has_analysis = 0;
+    self.path = (unsigned int*)std::calloc(128, sizeof(TransducerIndex));
+    self.allocated = 128;
+    ::self = &self;
+    ::lookup(s, start_state_start, start_state_end);
+    return self.has_analysis != 0;
 }
 
 // ISSUE implementations don't follow HFST's own definition!
@@ -256,13 +267,13 @@ void Transducer::lookup(const char* s, TransducerIndex beg, const TransducerInde
         // 
         else if (FlagDiacritics::IsIt(input))
         {
-            FlagDiacritics::State flagsate = fd_state;
-            if (FlagDiacritics::Apply(input, fd_state))
+            // FlagDiacritics::State flagsate = fd_state;
+            // if (FlagDiacritics::Apply(input, fd_state))
             {
                 path.emplace_back(id);
                 lookup(s, to_beg, to_end);
             }
-            fd_state = flagsate;
+            // fd_state = flagsate;
         }
         else if (const char* next = ContainsPrefix2(s, input))
         {   // a lead to follow
