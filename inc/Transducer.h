@@ -2,11 +2,7 @@
 
 #include <vector>
 #include <istream>
-#include <exception>
 #include <functional>
-#include <regex>
-#include <unordered_map>
-#include <array>
 #include <stdio.h>
 
 #include "Utils.h"
@@ -36,13 +32,22 @@ public:
     typedef std::vector<TransducerIndex> Path;
     typedef std::function<void(const Path&)> ResultHandler;
 
-    void Lookup(const char* s, const ResultHandler& resulthandler, double time_limit = 0.0, size_t max_results = 0, size_t max_depth = 0);
+    size_t max_results;
+    size_t max_depth;
+    double time_limit;
+    Transducer::ResultHandler* resulthandler;
+
+    void Lookup(const char* s);
 private:
     std::vector<TransducerIndex> transitions_table;
     TransducerIndex start_state_start, start_state_end;
     size_t n_transitions, n_states;
     
-    const ResultHandler* resulthandler;
     void lookup(const char* s, TransducerIndex beg, const TransducerIndex end);
 
+    size_t n_results;
+    Transducer::Path path;
+    FlagDiacritics::State fd_state;
+    Clock<> myclock;
+    bool flag_failed;
 };

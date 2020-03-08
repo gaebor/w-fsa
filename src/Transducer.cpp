@@ -3,7 +3,8 @@
 #include <string>
 #include <limits>
 #include <unordered_map>
-#include <iostream>
+#include <sstream>
+#include <array>
 
 #include "Utils.h"
 #include "FlagDiacritics.h"
@@ -47,14 +48,6 @@ static void append_str(const char * s, std::vector<TransducerIndex>& v)
         *target++ = *s++;
     }
 }
-
-thread_local size_t max_results;
-thread_local size_t max_depth;
-thread_local size_t n_results;
-thread_local Transducer::Path path;
-thread_local FlagDiacritics::State fd_state;
-thread_local Clock<> myclock;
-thread_local double time_limit;
 
 #ifdef _MSC_VER
 #   define _ftell _ftelli64
@@ -219,17 +212,12 @@ size_t Transducer::GetAllocatedMemory() const
     return sizeof(TransducerIndex)*transitions_table.size();
 }
 
-void Transducer::Lookup(const char* s, const ResultHandler& resulth, double time_l, size_t max_r, size_t max_d)
+void Transducer::Lookup(const char* s)
 {
-    max_results = max_r;
-    max_depth = max_d;
-    time_limit = time_l;   
     n_results = 0;
     path.clear();
     fd_state.clear();
     myclock.Tick();
-
-    resulthandler = &resulth;
 
     lookup(s, start_state_start, start_state_end);
 }

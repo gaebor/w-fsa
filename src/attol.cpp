@@ -1,7 +1,6 @@
 #include <iostream>
 #include <stdio.h>
 #include <fstream>
-#include <vector>
 #include <string>
 
 #include "ArgParser.h"
@@ -81,6 +80,10 @@ try{
     if (!output)
         throw MyError("Unable to open output file \"", output_filename, "\"!");
     
+    t.max_depth = max_depth;
+    t.max_results = max_results;
+    t.time_limit = time_limit;
+
     bool has_analysis;
     Transducer::ResultHandler resulthandler = [&](const Transducer::Path& path)
     {
@@ -92,6 +95,7 @@ try{
         putc('\n', output);
         has_analysis = true;
     };
+    t.resulthandler = &resulthandler;
 
     int c = ~EOF;
     while (c != EOF)
@@ -100,7 +104,7 @@ try{
         while ((c = fgetc(input)) != EOF && c != '\n' && c != '\0')
             word.push_back(static_cast<char>(c));
         has_analysis = false;
-        t.Lookup(word.c_str(), resulthandler, time_limit, max_results, max_depth);
+        t.Lookup(word.c_str());
         if (!has_analysis)
         {
             fputs(word.c_str(), output);
