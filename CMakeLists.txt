@@ -19,9 +19,10 @@ set (incdir ${PROJECT_SOURCE_DIR}/inc)
 #                     ${srcdir}/Fsa.cpp ${incdir}/Fsa.h)
 
 add_executable(attol ${srcdir}/attol.cpp ${incdir}/ArgParser.h
+					 ${srcdir}/char.cpp ${incdir}/atto/char.h
                      ${srcdir}/Utils.cpp ${incdir}/Utils.h
                      ${srcdir}/Isatty.cpp ${incdir}/Isatty.h
-                     ${srcdir}/FlagDiacritics.cpp ${incdir}/FlagDiacritics.h
-                     ${srcdir}/Transducer.cpp ${incdir}/Transducer.h)
+                     ${incdir}/atto/FlagDiacritics.h
+                     ${srcdir}/Transducer.cpp ${incdir}/atto/Transducer.h)
 
 include_directories("${incdir}")

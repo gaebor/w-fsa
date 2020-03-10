@@ -220,42 +220,12 @@ bool ContainsPrefix(const CStr& word, const CStr& prefix)
 
 const char* ContainsPrefix2(const char* word, const char* prefix)
 {
-    while (*word == *prefix && *word != '\0' && *prefix != '\0')
+    while (*word == *prefix && *word != '\0')
     {
         ++word;
         ++prefix;
     }
     return (*prefix == '\0') ? word : nullptr;
-}
-
-const char* GetNextUtf8Character(const char* word)
-{
-    if ((128 & *word) == 0)
-    {
-        return word + 1;
-    }
-    else if ((32 & *word) == 0)
-    {
-        return word + 2;
-    }
-    else if ((16 & *word) == 0)
-    {
-        return word + 3;
-    }
-    else
-    {
-        return word + 4;
-    }
-}
-
-bool StrEq2(const char* word1, const char* word2)
-{
-    while (*word1 == *word2 && *word1 != '\0' && *word2!= '\0')
-    {
-        ++word1;
-        ++word2;
-    }
-    return *word1 == '\0' && *word2 == '\0';
 }
 
 double LogSimplexVolume(size_t d)

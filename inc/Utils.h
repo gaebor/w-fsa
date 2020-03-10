@@ -27,6 +27,19 @@
 //#include "mkl_spblas.h"
 //#include "mkl_dss.h"
 
+template<class Return, class Arg>
+Return IntLog2(Arg s)
+{
+    s -= 1;
+    Return r = 0;
+    while (s)
+    {
+        ++r;
+        s >>= 1;
+    }
+    return r;
+}
+
 std::pair<const char*, char> GetWord(char*& input, const char* separator= " ");
 
 void PrintFixedWidth(FILE* out, double x, int width = 7);
@@ -93,8 +106,6 @@ struct StrEq
     bool operator()(const CStr& a, const CStr& b)const;
     static const StrEq streq;
 };
-
-bool StrEq2(const char* word1, const char* word2);
 
 struct StrLess
 {
@@ -199,8 +210,6 @@ bool ReadContent(FILE* input, std::vector<char>& content);
 //    const std::vector<MKL_INT>& cols);
 
 bool ContainsPrefix(const CStr& word, const CStr& prefix);
-const char* ContainsPrefix2(const char* word, const char* prefix);
-const char* GetNextUtf8Character(const char* word);
 
 double LogFactorial(size_t d);
 double LogSimplexVolume(size_t d);

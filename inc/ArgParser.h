@@ -420,15 +420,13 @@ namespace arg
     {
         typedef typename String::value_type Chr;
         static_assert(std::is_base_of<std::basic_ostream<Chr, typename String::traits_type>, OStream>::value, "OStream type should be child of std::basic_ostream");
-        bool fail()const
+        static bool fail()
         {
             if (strict)
                 exit(1);
-            else
-                return false;
-            return true;
+            return false;
         }
-        bool succeed()const
+        static bool succeed()
         {
             if (strict)
                 exit(0);

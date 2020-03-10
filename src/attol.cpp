@@ -4,7 +4,7 @@
 #include <string>
 
 #include "ArgParser.h"
-#include "Transducer.h"
+#include "atto/Transducer.h"
 #include "Utils.h"
 #include "Isatty.h"
 
@@ -18,6 +18,7 @@ int main(int argc, const char** argv)
     double time_limit = 0.0;
     size_t max_depth = 0, max_results = 0;
     bool binary = false;
+    int flag_strategy = atto::Transducer::OBEY;
     std::string dump;
     {
         arg::Parser<> parser("AT&T Optimized Lookup", { "-h", "--help" }, std::cout, std::cerr, "", 80);
@@ -30,10 +31,13 @@ int main(int argc, const char** argv)
         parser.AddArg(time_limit, { "-t", "--time" }, "time limit (in seconds) when not to search further\nunlimited if set to 0");
         parser.AddArg(max_results, { "-n" }, "max number of results for one word\nunlimited if set to 0");
         parser.AddArg(max_depth, { "-d", "--depth" }, "maximum depth to go down during lookup\nunlimited if set to 0");
+        parser.AddArg(flag_strategy, { "-f", "--flag" }, ToStr("how to treat the flag diacritics\n",
+            atto::Transducer::OBEY, ": obey\n", atto::Transducer::IGNORE, ": ignore (off)\n", atto::Transducer::NEGATIVE, ": negative, return only those paths that were invalid flag-wise but correct analysis otherwise."),
+            "enum", std::vector<int>({ atto::Transducer::OBEY, atto::Transducer::IGNORE, atto::Transducer::NEGATIVE }));
         parser.Do(argc, argv);
     }
-try{
-    Transducer t;
+try{ 
+    atto::Transducer t;
     if (binary)
     {
         if (FILE* f = fopen(transducer_filename.c_str(), "rb"))
@@ -85,7 +89,7 @@ try{
     t.time_limit = time_limit;
 
     bool has_analysis;
-    Transducer::ResultHandler resulthandler = [&](const Transducer::Path& path)
+    atto::Transducer::ResultHandler resulthandler = [&](const atto::Transducer::Path& path)
     {
         fputs(word.c_str(), output);
         for (auto i : path)
@@ -104,7 +108,7 @@ try{
         while ((c = fgetc(input)) != EOF && c != '\n' && c != '\0')
             word.push_back(static_cast<char>(c));
         has_analysis = false;
-        t.Lookup(word.c_str());
+        t.Lookup(word.c_str(), atto::Transducer::FlagStrategy(flag_strategy));
         if (!has_analysis)
         {
             fputs(word.c_str(), output);

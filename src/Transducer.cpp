@@ -1,4 +1,4 @@
-#include "Transducer.h"
+#include "atto/Transducer.h"
 
 #include <string>
 #include <limits>
@@ -7,8 +7,10 @@
 #include <array>
 
 #include "Utils.h"
-#include "FlagDiacritics.h"
+#include "atto/FlagDiacritics.h"
 
+namespace atto {
+    
 Transducer::Transducer() { }
 
 Transducer::Transducer(std::istream & is)
@@ -17,16 +19,6 @@ Transducer::Transducer(std::istream & is)
 }
 
 static auto& mycast = SaturateCast<TransducerIndex>::template Do<size_t>;
-
-static inline bool str_ends(TransducerIndex x)
-{
-    for (size_t i = 0; i < sizeof(TransducerIndex); ++i)
-    {
-        if (((const char*)(&x))[i] == '\0')
-            return true;
-    }
-    return false;
-}
 
 static size_t str_space_required(const char * s)
 {
@@ -166,11 +158,15 @@ void Transducer::Read(std::istream & is)
 
         // input
         append_str(input.c_str(), transitions_table);
+        if (FlagDiacritics<>::IsIt(input.c_str()))
+            fd_table.Read(input.c_str());
 
         ++n_transitions;
     }
     n_states = state_pointers.size();
     state_pointers[previous_state][1] = mycast(transitions_table.size());
+
+    fd_table.CalculateOffsets();
 
     for (auto i = transitions_table.begin(); i < transitions_table.end(); ++i)
     {
@@ -186,10 +182,13 @@ void Transducer::Read(std::istream & is)
         }
         
         i += 3;
-        while (!str_ends(*i))
+        char* j = (char*)&(*i);
+        while (!StrEnds<UTF8>(*i))
         {
             ++i;
         }
+        if (fd_table.IsIt(j))
+            fd_table.Compile(j);
     }
 
     // supposing that the START is "0"
@@ -212,74 +211,23 @@ size_t Transducer::GetAllocatedMemory() const
     return sizeof(TransducerIndex)*transitions_table.size();
 }
 
-void Transducer::Lookup(const char* s)
+void Transducer::Lookup(const char* s, FlagStrategy strategy)
 {
     n_results = 0;
     path.clear();
     fd_state.clear();
     myclock.Tick();
+    flag_failed = false;
 
-    lookup(s, start_state_start, start_state_end);
+    switch (strategy)
+    {
+    case FlagStrategy::IGNORE:
+        return lookup<IGNORE>(s, start_state_start, start_state_end);
+    case FlagStrategy::NEGATIVE:
+        return lookup<NEGATIVE>(s, start_state_start, start_state_end);
+    default:
+        return lookup<OBEY>(s, start_state_start, start_state_end);
+    };
 }
 
-// ISSUE implementations don't follow HFST's own definition!
-// @[PNDRCU][.][A-Z]+([.][A-Z]+)?@
-
-void Transducer::lookup(const char* s, TransducerIndex beg, const TransducerIndex end)
-{
-    if ((max_results == 0 || n_results < max_results) && 
-        (max_depth == 0 || path.size() < max_depth) &&
-        (time_limit == 0 || myclock.Tock() < time_limit))
-    for (; beg < end; ++beg)
-    {   // try outgoing edges
-        const auto id = transitions_table[beg];
-        const auto to_beg = transitions_table[beg + 1];
-        const auto to_end = transitions_table[beg + 2];
-        const auto input = reinterpret_cast<const char*>(transitions_table.data() + beg + 3);
-        
-        if (to_end == std::numeric_limits<TransducerIndex>::max() ||
-            to_beg == std::numeric_limits<TransducerIndex>::max())
-        {   //final state
-            if (*s == '\0')
-            {   // that's a result
-                ++n_results;
-                path.emplace_back(id);
-                (*resulthandler)(path);
-                path.pop_back();
-            }
-        }
-        else if (StrEq2(input, "@_UNKNOWN_SYMBOL_@") || StrEq2(input, "@_IDENTITY_SYMBOL_@"))
-        {   // consume one character
-            // TODO this can be hastened if the special symbols are shorter!
-            path.emplace_back(id);
-            lookup(GetNextUtf8Character(s), to_beg, to_end);
-        }
-        // 
-        // epsilon is handled with a simple empty string
-        // 
-        else if (FlagDiacritics::IsIt(input))
-        {
-            FlagDiacritics::State flagsate = fd_state;
-            if (FlagDiacritics::Apply(input, fd_state))
-            {
-                path.emplace_back(id);
-                lookup(s, to_beg, to_end);
-            }
-            fd_state = flagsate;
-        }
-        else if (const char* next = ContainsPrefix2(s, input))
-        {   // a lead to follow
-            path.emplace_back(id);
-            lookup(next, to_beg, to_end);
-        }
-
-        beg += 3;
-        while (!str_ends(transitions_table[beg]))
-        {
-            ++beg;
-        }
-    }
-
-    if (!path.empty())
-        path.pop_back();
 }
