@@ -6,6 +6,7 @@
 #include <array>
 #include <tuple>
 #include <stdio.h>
+#include <cstdint>
 
 #include "atto/FlagDiacritics.h"
 #include "atto/char.h"
@@ -14,12 +15,7 @@
 
 namespace atto {
 
-#ifndef ATTOL_NUMBER
-typedef unsigned int TransducerIndex;
-#else
-typedef ATTOL_NUMBER TransducerIndex;
-#undef ATTOL_NUMBER
-#endif
+typedef std::uint32_t TransducerIndex;
 
 class Transducer
 {
@@ -41,8 +37,7 @@ public:
     Transducer();
     Transducer(std::istream& is);
     void Read(std::istream& is);
-    void ReadBinary(FILE* f);
-    void DumpBinary(FILE* f);
+
     //! including to finishing from a final state
     size_t GetNumberOfTransitions()const;
     //! including start state
@@ -54,7 +49,7 @@ public:
     size_t max_results;
     size_t max_depth;
     double time_limit;
-    Transducer::ResultHandler* resulthandler;
+    Transducer::ResultHandler resulthandler;
 
     enum FlagStrategy
     {
@@ -81,70 +76,71 @@ private:
             myclock.Tick();
             return;
         }
-        if ((max_results == 0 || n_results < max_results) &&
-            (max_depth == 0 || path.size() < max_depth) &&
-            (time_limit == 0 || myclock.Tock() < time_limit))
+        if ((max_results > 0 && n_results >= max_results) ||
+            (max_depth > 0 && path.size() >= max_depth) ||
+            (time_limit > 0 && myclock.Tock() >= time_limit))
         {
-            for (RecordIterator<> i(transitions_table.data() + beg); i < transitions_table.data() + end; ++i)
-            {   // try outgoing edges
-                const auto input = i.GetInput();
-                auto current_flag_state = path.empty() ? FlagState() : std::get<2>(path.back());
+            return;
+        }
+        for (RecordIterator<> i(transitions_table.data() + beg); i < transitions_table.data() + end; ++i)
+        {   // try outgoing edges
+            const auto input = i.GetInput();
+            auto current_flag_state = path.empty() ? FlagState() : std::get<2>(path.back());
 
-                if (i.GetTo() == std::numeric_limits<TransducerIndex>::max() ||
-                    i.GetFrom() == std::numeric_limits<TransducerIndex>::max())
-                {   //final state
-                    if (*s == '\0' && (strategy != NEGATIVE || flag_failed))
-                    {   // that's a result
-                        ++n_results;
-                        path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, input, i.GetOutput());
-                        (*resulthandler)(path);
-                        path.pop_back();
-                    }
-                }
-                else if (StrEqual<Encoding::UTF8>(input, "@_UNKNOWN_SYMBOL_@") ||
-                    StrEqual<Encoding::UTF8>(input, "@_IDENTITY_SYMBOL_@"))
-                {   // consume one character
-                    // TODO this can be hastened if the special symbols are shorter!
+            if (i.GetTo() == std::numeric_limits<TransducerIndex>::max() ||
+                i.GetFrom() == std::numeric_limits<TransducerIndex>::max())
+            {   //final state
+                if (*s == '\0' && (strategy != NEGATIVE || flag_failed))
+                {   // that's a result
+                    ++n_results;
                     path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, input, i.GetOutput());
-                    lookup<strategy>(GetNextCharacter<Encoding::UTF8>(s), i.GetFrom(), i.GetTo());
+                    resulthandler(path);
                     path.pop_back();
                 }
-                // 
-                // epsilon is handled with a simple empty string
-                // 
-                else if (fd_table.IsIt(input))
+            }
+            else if (StrEqual<Encoding::UTF8>(input, "@_UNKNOWN_SYMBOL_@") ||
+                StrEqual<Encoding::UTF8>(input, "@_IDENTITY_SYMBOL_@"))
+            {   // consume one character
+                // TODO this can be hastened if the special symbols are shorter!
+                path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, input, i.GetOutput());
+                lookup<strategy>(GetNextCharacter<Encoding::UTF8>(s), i.GetFrom(), i.GetTo());
+                path.pop_back();
+            }
+            // 
+            // epsilon is handled with a simple empty string
+            // 
+            else if (fd_table.IsIt(input))
+            {
+                if (strategy == IGNORE)
+                {   // go with it, no matter what
+                    path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, i.GetOutput(), i.GetOutput());
+                    lookup<strategy>(s, i.GetFrom(), i.GetTo());
+                    path.pop_back();
+                }
+                else
                 {
-                    if (strategy == IGNORE)
-                    {   // go with it, no matter what
+                    if (fd_table.Apply(input, current_flag_state))
+                    {
                         path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, i.GetOutput(), i.GetOutput());
                         lookup<strategy>(s, i.GetFrom(), i.GetTo());
                         path.pop_back();
                     }
-                    else
+                    else if (strategy == NEGATIVE)
                     {
-                        if (fd_table.Apply(input, current_flag_state))
-                        {
-                            path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, i.GetOutput(), i.GetOutput());
-                            lookup<strategy>(s, i.GetFrom(), i.GetTo());
-                            path.pop_back();
-                        }
-                        else if (strategy == NEGATIVE)
-                        {
-                            const bool previous_fail = flag_failed;
-                            flag_failed = true;
-                            path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, i.GetOutput(), i.GetOutput());
-                            lookup<strategy>(s, i.GetFrom(), i.GetTo());
-                            path.pop_back();
-                            flag_failed = previous_fail;
-                        }
+                        const bool previous_fail = flag_failed;
+                        flag_failed = true;
+                        path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, i.GetOutput(), i.GetOutput());
+                        lookup<strategy>(s, i.GetFrom(), i.GetTo());
+                        path.pop_back();
+                        flag_failed = previous_fail;
                     }
                 }
-                else if (const char* next = StrPrefix<Encoding::UTF8>(s, input))
-                {   // a lead to follow
-                    path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, input, i.GetOutput());
-                    lookup<strategy>(next, i.GetFrom(), i.GetTo());
-                    path.pop_back();
-                }
+            }
+            else if (const char* next = StrPrefix<Encoding::UTF8>(s, input))
+            {   // a lead to follow
+                path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, input, i.GetOutput());
+                lookup<strategy>(next, i.GetFrom(), i.GetTo());
+                path.pop_back();
             }
         }
     }

@@ -17,17 +17,13 @@ int main(int argc, const char** argv)
     std::string transducer_filename, input_filename, output_filename;
     double time_limit = 0.0;
     size_t max_depth = 0, max_results = 0;
-    bool binary = false;
-    unsigned char bits = 32;
-    bool weighted = false;
-    bool lookup_optimized = false;
+    int print = 1;
+
     int flag_strategy = atto::Transducer::OBEY;
     std::string dump;
     {
         arg::Parser<> parser("AT&T Optimized Lookup", { "-h", "--help" }, std::cout, std::cerr, "", 80);
 
-        parser.AddFlag(binary, { "-b", "--binary" }, 
-                        "read ATTOL binary format instead of text");
         parser.AddArg(transducer_filename, {}, 
                         "AT&T (text) format transducer filename", "filename");
         
@@ -52,32 +48,23 @@ int main(int argc, const char** argv)
         
         parser.AddArg(flag_strategy, { "-f", "--flag" }, 
             ToStr("how to treat the flag diacritics\n",
-            atto::Transducer::OBEY, ": obey\n", atto::Transducer::IGNORE, ": ignore (off)\n", atto::Transducer::NEGATIVE, ": negative, return only those paths that were invalid flag-wise but correct analysis otherwise."),
-            "enum", 
-            std::vector<int>({ atto::Transducer::OBEY, atto::Transducer::IGNORE, atto::Transducer::NEGATIVE }));
+                atto::Transducer::IGNORE, ": ignore (off)\n",
+                atto::Transducer::OBEY, ": obey\n", 
+                atto::Transducer::NEGATIVE, ": negative, return only those paths that were invalid flag-wise but correct analysis otherwise."),
+            "", std::vector<int>({ atto::Transducer::OBEY, atto::Transducer::IGNORE, atto::Transducer::NEGATIVE }));
         
-        parser.AddFlag(weighted, { "--weight", "--weighted" },
-                        "If true, and weights are not provided, then fills up with zeros.\n"
-                        "If false then omits the weights (if any).");
-        parser.AddFlag(lookup_optimized, { "-l", "--lookup" },
-                        "Switch to lookup-optimized format, instead of tape-optimized format.\n"
-                        "Lookup-optimized means that the transition IDs will be printed which produced the word."
-                        "Tape-optimized means that the analyses is printed");
-        
+        parser.AddArg(print, { "-p", "--print" },
+            ToStr("What to print about the analyses\n",
+                0, ": output tape result\n",
+                1, ": output tape result with weights\n",
+                2, ": transition IDs along the path\n",
+                3, ": transition IDs along the path with weights"),
+            "", std::vector<int>({ 0,1,2,3 }));
+  
         parser.Do(argc, argv);
     }
 try{ 
     atto::Transducer t;
-    if (binary)
-    {
-        if (FILE* f = fopen(transducer_filename.c_str(), "rb"))
-            t.ReadBinary(f);
-        else
-        {
-            std::cerr << "Cannot open to read \"" << transducer_filename << "\"!" << std::endl;
-            return 1;
-        }
-    } else
     {
         std::ifstream ifs(transducer_filename);
         if (ifs)
@@ -91,19 +78,6 @@ try{
         std::cerr << "Number of transitions (including finishing from final states): " << t.GetNumberOfTransitions() << std::endl;
     }
 
-    if (!dump.empty())
-    {
-        if (FILE* f = fopen(dump.c_str(), "wb"))
-        {
-            t.DumpBinary(f);
-            return 0;
-        }
-        else
-        {
-            std::cerr << "Cannot open to write \"" << dump << "\"!" << std::endl;
-            return 1;
-        }
-    }
     std::string word;
 
     FILE* input = input_filename.empty() ? stdin : fopen(input_filename.c_str(), "r");
@@ -118,18 +92,67 @@ try{
     t.max_results = max_results;
     t.time_limit = time_limit;
 
+    std::vector<float> weights;
     bool has_analysis;
-    atto::Transducer::ResultHandler resulthandler = [&](const atto::Transducer::Path& path)
+    switch (print)
     {
-        fputs(word.c_str(), output);
-        for (auto i : path)
+    case 1:
+        t.resulthandler = [&](const atto::Transducer::Path& path)
         {
-            fprintf(output, " %u", std::get<0>(i) + 1);
-        }
-        putc('\n', output);
-        has_analysis = true;
-    };
-    t.resulthandler = &resulthandler;
+            float weight = 0;
+            fputs(word.c_str(), output);
+            putc('\t', output);
+            for (auto i : path)
+            {
+                if (!atto::FlagDiacritics<>::IsIt(std::get<4>(i)))
+                    fputs(std::get<4>(i), output);
+                weight += std::get<1>(i);
+            }
+            fprintf(output, "\t%g\n", weight);
+            has_analysis = true;
+        };
+        break;
+    case 2:
+        t.resulthandler = [&](const atto::Transducer::Path& path)
+        {
+            fputs(word.c_str(), output);
+            for (auto i : path)
+            {
+                fprintf(output, " %u", std::get<0>(i) + 1);
+            }
+            putc('\n', output);
+            has_analysis = true;
+        };
+        break;
+    case 3:
+        t.resulthandler = [&](const atto::Transducer::Path& path)
+        {
+            float weight = 0;
+            fputs(word.c_str(), output);
+            for (auto i : path)
+            {
+                fprintf(output, " %u", std::get<0>(i) + 1);
+                weight += std::get<1>(i);
+            }
+            fprintf(output, "\t%g\n", weight);
+            has_analysis = true;
+        };
+        break;
+    default:
+        t.resulthandler = [&](const atto::Transducer::Path& path)
+        {
+            fputs(word.c_str(), output);
+            putc('\t', output);
+            for (auto i : path)
+            {
+                if (!atto::FlagDiacritics<>::IsIt(std::get<4>(i)))
+                    fputs(std::get<4>(i), output);
+            }
+            putc('\n', output);
+            has_analysis = true;
+        };
+        break;
+    }
 
     int c = ~EOF;
     while (c != EOF)
@@ -141,8 +164,7 @@ try{
         t.Lookup(word.c_str(), atto::Transducer::FlagStrategy(flag_strategy));
         if (!has_analysis)
         {
-            fputs(word.c_str(), output);
-            fputs(" ?\n", output);
+            fprintf(output, "%s\t%s+\n", word.c_str(), word.c_str());
         }
         putc('\n', output);
     }

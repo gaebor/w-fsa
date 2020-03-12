@@ -19,62 +19,6 @@ Transducer::Transducer(std::istream & is)
     Read(is);
 }
 
-#ifdef _MSC_VER
-#   define _ftell _ftelli64
-#   define _fseek _fseeki64
-#else
-#   define _ftell ftello
-#   define _fseek fseeko
-#endif
-
-void Transducer::ReadBinary(FILE* f)
-{
-    transitions_table.clear();
-    n_transitions = 0;
-    n_states = 0;
-
-    std::string first_line;
-    int c;
-    while (( c = getc(f)) != EOF && c != 0)
-    {
-        first_line.push_back(static_cast<char>(c));
-    }
-    std::istringstream iss(first_line);
-    size_t s;
-    iss >> s;
-    if (s != sizeof(TransducerIndex))
-    {
-        throw MyError("Binary file does not have the same alignment as compiled code (", s, "!=", sizeof(TransducerIndex), ")!");
-    }
-    if (c == EOF)
-        return;
-
-    if (fread(start_state.data(), sizeof(start_state), 1, f) != 1)
-        throw MyError("Invalid binary file format!");
-    s = _ftell(f);
-    if (_fseek(f, 0, SEEK_END))
-        throw MyError("Seeking failed during reading binary file!");
-    transitions_table.resize((_ftell(f) - s) / sizeof(TransducerIndex));
-    if (_fseek(f, s, SEEK_SET))
-        throw MyError("Seeking failed during reading binary file!");
-    if (fread(transitions_table.data(), sizeof(TransducerIndex), transitions_table.size(), f) != transitions_table.size())
-        throw MyError("Cannot read transition table from binary file!");
-}
-
-void Transducer::DumpBinary(FILE* f)
-{
-    std::ostringstream oss;
-    oss << sizeof(TransducerIndex);
-    if (fwrite(oss.str().c_str(), 1, oss.str().size() + 1, f) != oss.str().size() + 1)
-        throw MyError("Cannot Write binary file!");
-    
-    if (fwrite(start_state.data(), sizeof(start_state), 1, f) != 1)
-        throw MyError("Cannot Write binary file!");
-    
-    if (fwrite(transitions_table.data(), sizeof(TransducerIndex), transitions_table.size(), f) != transitions_table.size())
-        throw MyError("Cannot Write binary file!");
-}
-
 void Transducer::Read(std::istream & is)
 {
     std::unordered_map<TransducerIndex, ToPointers> state_pointers;
@@ -83,15 +27,16 @@ void Transducer::Read(std::istream & is)
     n_transitions = 0;
     n_states = 0;
 
-    TransducerIndex previous_state = std::numeric_limits<TransducerIndex>::max();
+    TransducerIndex previous_state = 0;
     std::string line;
-
+    std::vector<std::string> parts;
     Counter<std::string, TransducerIndex> states;
-    {
+    std::string input, output;
+    float weight;
 
     while (std::getline(is, line))
     {
-        std::vector<std::string> parts;
+        parts.clear();
         size_t pos = 0, pos_next;
         while (std::string::npos != (pos_next = line.find('\t', pos)))
         {
@@ -100,8 +45,8 @@ void Transducer::Read(std::istream & is)
         }
         parts.emplace_back(line.begin() + pos, line.end());
         TransducerIndex from = states[parts[0]], to;
-        std::string input, output;
-        float weight = 0;
+        input.clear(); output.clear();
+        weight = 0;
         switch (parts.size())
         {
         case 1:
@@ -154,7 +99,7 @@ void Transducer::Read(std::istream & is)
         
         ++n_transitions;
     }
-    }
+
     n_states = state_pointers.size();
     state_pointers[previous_state][1] = SaturateCast<TransducerIndex>::Do(transitions_table.size());
 
