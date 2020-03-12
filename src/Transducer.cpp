@@ -199,20 +199,22 @@ size_t Transducer::GetAllocatedMemory() const
 
 void Transducer::Lookup(const char* s, FlagStrategy strategy)
 {
-    n_results = 0;
-    path.clear();
-    myclock.Tick();
-    flag_failed = false;
-
+    auto lookup_fn = &Transducer::lookup<OBEY>;
+    
     switch (strategy)
     {
     case FlagStrategy::IGNORE:
-        return lookup<IGNORE>(s, start_state[0], start_state[1]);
+        lookup_fn = &Transducer::lookup<IGNORE>;
+        break;
     case FlagStrategy::NEGATIVE:
-        return lookup<NEGATIVE>(s, start_state[0], start_state[1]);
+        lookup_fn = &Transducer::lookup<NEGATIVE>;
+        break;
     default:
-        return lookup<OBEY>(s, start_state[0], start_state[1]);
+        break;
     };
+
+    (this->*lookup_fn)(nullptr, 0, 0);
+    return (this->*lookup_fn)(s, start_state[0], start_state[1]);
 }
 
 }

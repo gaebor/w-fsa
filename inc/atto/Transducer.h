@@ -32,15 +32,12 @@ private:
     std::vector<TransducerIndex> transitions_table;
     ToPointers start_state;
     size_t n_transitions, n_states;
-    size_t n_results;
     
     FlagDiacritics<> fd_table;
     typedef typename decltype(fd_table)::State FlagState;
 public:
     typedef std::vector<std::tuple<TransducerIndex, float, FlagState, const char*, const char*>> Path;
-private:
-    Transducer::Path path;
-public:
+
     Transducer();
     Transducer(std::istream& is);
     void Read(std::istream& is);
@@ -61,8 +58,8 @@ public:
 
     enum FlagStrategy
     {
-        OBEY,
         IGNORE,
+        OBEY,
         NEGATIVE
     };
 
@@ -71,6 +68,19 @@ private:
     template<FlagStrategy strategy>
     void lookup(const char* s, TransducerIndex beg, const TransducerIndex end)
     {
+        static thread_local Path path;
+        static thread_local size_t n_results;
+        static thread_local bool flag_failed;
+        static thread_local ::Clock<> myclock;
+
+        if (s == nullptr)
+        {
+            path.clear();
+            n_results = 0;
+            flag_failed = false;
+            myclock.Tick();
+            return;
+        }
         if ((max_results == 0 || n_results < max_results) &&
             (max_depth == 0 || path.size() < max_depth) &&
             (time_limit == 0 || myclock.Tock() < time_limit))
@@ -97,6 +107,7 @@ private:
                     // TODO this can be hastened if the special symbols are shorter!
                     path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, input, i.GetOutput());
                     lookup<strategy>(GetNextCharacter<Encoding::UTF8>(s), i.GetFrom(), i.GetTo());
+                    path.pop_back();
                 }
                 // 
                 // epsilon is handled with a simple empty string
@@ -107,6 +118,7 @@ private:
                     {   // go with it, no matter what
                         path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, i.GetOutput(), i.GetOutput());
                         lookup<strategy>(s, i.GetFrom(), i.GetTo());
+                        path.pop_back();
                     }
                     else
                     {
@@ -114,6 +126,7 @@ private:
                         {
                             path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, i.GetOutput(), i.GetOutput());
                             lookup<strategy>(s, i.GetFrom(), i.GetTo());
+                            path.pop_back();
                         }
                         else if (strategy == NEGATIVE)
                         {
@@ -121,6 +134,7 @@ private:
                             flag_failed = true;
                             path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, i.GetOutput(), i.GetOutput());
                             lookup<strategy>(s, i.GetFrom(), i.GetTo());
+                            path.pop_back();
                             flag_failed = previous_fail;
                         }
                     }
@@ -129,15 +143,11 @@ private:
                 {   // a lead to follow
                     path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, input, i.GetOutput());
                     lookup<strategy>(next, i.GetFrom(), i.GetTo());
+                    path.pop_back();
                 }
             }
         }
-        if (!path.empty())
-            path.pop_back();
     }
-private:
-    ::Clock<> myclock;
-    bool flag_failed;
 };
 
 }
