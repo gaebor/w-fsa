@@ -46,18 +46,6 @@ void PrintFixedWidth(FILE* out, double x, int width = 7);
 
 typedef const char* CStr;
 
-template<size_t width>
-struct Round
-{
-    template<class Number>
-    static Number Do(Number i)
-    {
-        static const Number mask1 = width - 1;
-        static const Number mask2 = ~mask1;
-        return (i + mask1) & mask2;
-    }
-};
-
 //! simple class to measure time, not thread safe!
 template<class ClockTy = std::chrono::steady_clock>
 class Clock

@@ -18,22 +18,52 @@ int main(int argc, const char** argv)
     double time_limit = 0.0;
     size_t max_depth = 0, max_results = 0;
     bool binary = false;
+    unsigned char bits = 32;
+    bool weighted = false;
+    bool lookup_optimized = false;
     int flag_strategy = atto::Transducer::OBEY;
     std::string dump;
     {
         arg::Parser<> parser("AT&T Optimized Lookup", { "-h", "--help" }, std::cout, std::cerr, "", 80);
 
-        parser.AddArg(transducer_filename, {}, "AT&T (text) format transducer filename", "filename");
-        parser.AddFlag(binary, { "-b", "--binary" }, "read ATTOL binary format instead of text");
-        parser.AddArg(dump, { "-w", "--write", "--dump" }, "after reading, dump the transducer in ATTOL binary format\ndon't perform actual lookup", "filename");
-        parser.AddArg(input_filename, { "-i", "--input" }, "input file to analyze, stdin if empty", "filename");
-        parser.AddArg(output_filename, { "-o", "--output" }, "output file, stdout if empty", "filename");
-        parser.AddArg(time_limit, { "-t", "--time" }, "time limit (in seconds) when not to search further\nunlimited if set to 0");
-        parser.AddArg(max_results, { "-n" }, "max number of results for one word\nunlimited if set to 0");
-        parser.AddArg(max_depth, { "-d", "--depth" }, "maximum depth to go down during lookup\nunlimited if set to 0");
-        parser.AddArg(flag_strategy, { "-f", "--flag" }, ToStr("how to treat the flag diacritics\n",
+        parser.AddFlag(binary, { "-b", "--binary" }, 
+                        "read ATTOL binary format instead of text");
+        parser.AddArg(transducer_filename, {}, 
+                        "AT&T (text) format transducer filename", "filename");
+        
+        parser.AddArg(dump, { "-w", "--write", "--dump" }, 
+                        "after reading, dump the transducer in ATTOL binary format\n"
+                        "don't perform actual lookup", "filename");
+        
+        parser.AddArg(input_filename, { "-i", "--input" },
+                        "input file to analyze, stdin if empty", "filename");
+        parser.AddArg(output_filename, { "-o", "--output" },
+                        "output file, stdout if empty", "filename");
+        
+        parser.AddArg(time_limit, { "-t", "--time" }, 
+                        "time limit (in seconds) when not to search further\n"
+                        "unlimited if set to 0");
+        parser.AddArg(max_results, { "-n" },
+                        "max number of results for one word\n"
+                        "unlimited if set to 0");
+        parser.AddArg(max_depth, { "-d", "--depth" },
+                        "maximum depth to go down during lookup\n"
+                        "unlimited if set to 0");
+        
+        parser.AddArg(flag_strategy, { "-f", "--flag" }, 
+            ToStr("how to treat the flag diacritics\n",
             atto::Transducer::OBEY, ": obey\n", atto::Transducer::IGNORE, ": ignore (off)\n", atto::Transducer::NEGATIVE, ": negative, return only those paths that were invalid flag-wise but correct analysis otherwise."),
-            "enum", std::vector<int>({ atto::Transducer::OBEY, atto::Transducer::IGNORE, atto::Transducer::NEGATIVE }));
+            "enum", 
+            std::vector<int>({ atto::Transducer::OBEY, atto::Transducer::IGNORE, atto::Transducer::NEGATIVE }));
+        
+        parser.AddFlag(weighted, { "--weight", "--weighted" },
+                        "If true, and weights are not provided, then fills up with zeros.\n"
+                        "If false then omits the weights (if any).");
+        parser.AddFlag(lookup_optimized, { "-l", "--lookup" },
+                        "Switch to lookup-optimized format, instead of tape-optimized format.\n"
+                        "Lookup-optimized means that the transition IDs will be printed which produced the word."
+                        "Tape-optimized means that the analyses is printed");
+        
         parser.Do(argc, argv);
     }
 try{ 
@@ -94,7 +124,7 @@ try{
         fputs(word.c_str(), output);
         for (auto i : path)
         {
-            fprintf(output, " %u", i);
+            fprintf(output, " %u", std::get<0>(i) + 1);
         }
         putc('\n', output);
         has_analysis = true;

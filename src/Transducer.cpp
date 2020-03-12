@@ -8,37 +8,15 @@
 
 #include "Utils.h"
 #include "atto/FlagDiacritics.h"
+#include "atto/Record.h"
 
 namespace atto {
-    
+
 Transducer::Transducer() { }
 
 Transducer::Transducer(std::istream & is)
 {
     Read(is);
-}
-
-static auto& mycast = SaturateCast<TransducerIndex>::template Do<size_t>;
-
-static size_t str_space_required(const char * s)
-{
-    auto original = s;
-    while (*s)
-    {
-        ++s;
-    }
-    return Round<sizeof(TransducerIndex)>::Do((s - original) + 1);
-}
-
-static void append_str(const char * s, std::vector<TransducerIndex>& v)
-{
-    const auto end = v.size();
-    v.resize(end + str_space_required(s) / sizeof(TransducerIndex), 0);
-    char* target = (char*)(&(v[end]));
-    while (*s)
-    {
-        *target++ = *s++;
-    }
 }
 
 #ifdef _MSC_VER
@@ -71,9 +49,7 @@ void Transducer::ReadBinary(FILE* f)
     if (c == EOF)
         return;
 
-    if (fread(&start_state_start, sizeof(start_state_start), 1, f) != 1)
-        throw MyError("Invalid binary file format!");
-    if (fread(&start_state_end, sizeof(start_state_end), 1, f) != 1)
+    if (fread(start_state.data(), sizeof(start_state), 1, f) != 1)
         throw MyError("Invalid binary file format!");
     s = _ftell(f);
     if (_fseek(f, 0, SEEK_END))
@@ -92,9 +68,7 @@ void Transducer::DumpBinary(FILE* f)
     if (fwrite(oss.str().c_str(), 1, oss.str().size() + 1, f) != oss.str().size() + 1)
         throw MyError("Cannot Write binary file!");
     
-    if (fwrite(&start_state_start, sizeof(start_state_start), 1, f) != 1)
-        throw MyError("Cannot Write binary file!");
-    if (fwrite(&start_state_end, sizeof(start_state_end), 1, f) != 1)
+    if (fwrite(start_state.data(), sizeof(start_state), 1, f) != 1)
         throw MyError("Cannot Write binary file!");
     
     if (fwrite(transitions_table.data(), sizeof(TransducerIndex), transitions_table.size(), f) != transitions_table.size())
@@ -103,7 +77,7 @@ void Transducer::DumpBinary(FILE* f)
 
 void Transducer::Read(std::istream & is)
 {
-    std::unordered_map<TransducerIndex, std::array<TransducerIndex, 2>> state_pointers;
+    std::unordered_map<TransducerIndex, ToPointers> state_pointers;
 
     transitions_table.clear();
     n_transitions = 0;
@@ -113,6 +87,7 @@ void Transducer::Read(std::istream & is)
     std::string line;
 
     Counter<std::string, TransducerIndex> states;
+    {
 
     while (std::getline(is, line))
     {
@@ -125,75 +100,86 @@ void Transducer::Read(std::istream & is)
         }
         parts.emplace_back(line.begin() + pos, line.end());
         TransducerIndex from = states[parts[0]], to;
-        std::string input;
+        std::string input, output;
+        float weight = 0;
         switch (parts.size())
         {
         case 1:
         case 2:
             // final state
             to = std::numeric_limits<TransducerIndex>::max();
+            if (parts.size() == 2)
+                std::istringstream(parts[1]) >> weight;
             break;
         case 4:
         case 5:
             // ordinary transition
             to = states[parts[1]];
             input = parts[2];
-            if (input == "@0@" || input == "@_EPSILON_SYMBOL_@")
-                // these will end up deleting from input tape anyway
-                // we don't care what will happen to output tape!
-                input.clear();
-            //else if (FlagDiacritics::IsIt(input.c_str()))
-            //    fd_table.Read(input.c_str());
+            output = parts[3];
+            for (auto s : {&input, &output})
+            {
+                if (*s == "@0@" || *s == "@_EPSILON_SYMBOL_@")
+                    s->clear();
+            }
+            if (parts.size() == 5)
+                std::istringstream(parts[4]) >> weight;
             break;
+        default:
+            throw MyError("AT&T file at line", n_transitions + 1, " has length ", parts.size());
         };
         if (previous_state != from)
         {
-            state_pointers[from][0] = mycast(transitions_table.size());
+            state_pointers[from][0] = (TransducerIndex)transitions_table.size();
             state_pointers[previous_state][1] = state_pointers[from][0];
             previous_state = from;
         }
-        transitions_table.emplace_back(mycast(n_transitions));
-        transitions_table.emplace_back(from);
-        transitions_table.emplace_back(to);
+        
+        //! write the binary format (pre-compile)
+        transitions_table.emplace_back((TransducerIndex)n_transitions);
+        transitions_table.emplace_back(from); // this will be to_start
+        transitions_table.emplace_back(to); // this will be to_end
+        transitions_table.emplace_back();
+        static_assert(sizeof(weight) == sizeof(TransducerIndex), "");
+        std::memcpy(&transitions_table.back(), &weight, sizeof(weight));
 
-        // input
-        append_str(input.c_str(), transitions_table);
         if (FlagDiacritics<>::IsIt(input.c_str()))
+        {
+            if (input != output)
+                    throw MyError("Input and output tape symbols doesn't math for flag diacritic: \"", input, "\" != \"", output, "\"");
             fd_table.Read(input.c_str());
-
+        }
+        CopyStr(input.c_str(), transitions_table);
+        CopyStr(output.c_str(), transitions_table);
+        
         ++n_transitions;
     }
+    }
     n_states = state_pointers.size();
-    state_pointers[previous_state][1] = mycast(transitions_table.size());
+    state_pointers[previous_state][1] = SaturateCast<TransducerIndex>::Do(transitions_table.size());
 
     fd_table.CalculateOffsets();
 
-    for (auto i = transitions_table.begin(); i < transitions_table.end(); ++i)
+    // write the binary format
+    const auto end = transitions_table.data() + transitions_table.size();
+    for (RecordIterator<> i(transitions_table.data()); i < end; ++i)
     {
-        const auto& to = *(i + 2);
-        if (to == std::numeric_limits<TransducerIndex>::max())
-        {   //final state has a MAXINT destination
-            *(i + 1) = std::numeric_limits<TransducerIndex>::max();
-        }else
-        {   // TODO it may happen that the to state is not in state_pointers
-            // "dead end" or "dangling edge"
-            *(i + 1) = state_pointers[to][0];
-            *(i + 2) = state_pointers[to][1];
-        }
+        auto& from = i.GetFrom();
+        auto& to = i.GetTo();
+     
+        if (from != std::numeric_limits<TransducerIndex>::max() && 
+            to != std::numeric_limits<TransducerIndex>::max())
+        {   // non-final state
+            from = state_pointers[to][0];
+            to = state_pointers[to][1];
+        }// these are 'pointers' now, not indexes
         
-        i += 3;
-        char* j = (char*)&(*i);
-        while (!StrEnds<UTF8>(*i))
-        {
-            ++i;
-        }
-        if (fd_table.IsIt(j))
-            fd_table.Compile(j);
+        if (fd_table.IsIt(i.GetInput()))
+            fd_table.Compile(i.GetInput());
     }
 
     // supposing that the START is "0"
-    start_state_start = state_pointers[states["0"]][0];
-    start_state_end = state_pointers[states["0"]][1];
+    start_state = state_pointers[states["0"]];
 }
 
 size_t Transducer::GetNumberOfTransitions() const
@@ -215,18 +201,17 @@ void Transducer::Lookup(const char* s, FlagStrategy strategy)
 {
     n_results = 0;
     path.clear();
-    fd_state.clear();
     myclock.Tick();
     flag_failed = false;
 
     switch (strategy)
     {
     case FlagStrategy::IGNORE:
-        return lookup<IGNORE>(s, start_state_start, start_state_end);
+        return lookup<IGNORE>(s, start_state[0], start_state[1]);
     case FlagStrategy::NEGATIVE:
-        return lookup<NEGATIVE>(s, start_state_start, start_state_end);
+        return lookup<NEGATIVE>(s, start_state[0], start_state[1]);
     default:
-        return lookup<OBEY>(s, start_state_start, start_state_end);
+        return lookup<OBEY>(s, start_state[0], start_state[1]);
     };
 }
 

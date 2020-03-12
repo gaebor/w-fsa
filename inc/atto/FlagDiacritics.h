@@ -15,34 +15,39 @@ namespace atto {
 template<class CharType = char, class FlagStorageType = int>
 class FlagDiacritics
 {
-    static_assert(std::is_integral<CharType>::value && std::is_integral<FlagStorageType>::value,
-        "atto::FlagDiacritics requires an integral type as template parameter!");
-public:    
+public:
+    // does the flag state have to be larger than 64bit?
+    // typedef typename std::remove_extent<FlagStorageType>::type ValueType;
+    static_assert(std::is_integral<CharType>::value, "atto::FlagDiacritics requires an integral type as first template parameter!");
+    static_assert(!std::is_const<FlagStorageType>::value, "FlagStorageType cannot be const!");
+    static_assert(std::is_integral<FlagStorageType>::value && std::is_signed<FlagStorageType>::value,
+        "atto::FlagDiacritics requires a signed integral type as second template parameter!");
     typedef std::basic_string<CharType> string;
     typedef CharType* cstr;
     typedef const CharType* ccstr;
+    typedef FlagStorageType StorageType;
 
     struct State
     {
         State() : bitfield(0) {}
         //! returns a mask, where there are 1's in places [i, j)
-        static inline FlagStorageType Mask(unsigned char i, unsigned char j)
+        static inline StorageType Mask(unsigned char i, unsigned char j)
         {
             // mask 0000001111000000
             //      5432109876543210
             //           j   i      
-            return (((FlagStorageType)1 << (j - i)) - (FlagStorageType)1) << i;
+            return (((StorageType)1 << (j - i)) - (StorageType)1) << i;
         }
-        FlagStorageType  Get(unsigned char i, unsigned char j)const
+        StorageType Get(unsigned char i, unsigned char j)const
         {
-            auto x = (((FlagStorageType)1 << (j - i)) - (FlagStorageType)1) & (bitfield >> i);
+            auto x = (((StorageType)1 << (j - i)) - (StorageType)1) & (bitfield >> i);
             if (x >> (j - i - 1))
             {   // negative value
-                x |= (FlagStorageType)(-1) << (j - i);
+                x |= (StorageType)(-1) << (j - i);
             }
             return x;
         }
-        void Set(unsigned char i, unsigned char j, FlagStorageType new_value)
+        void Set(unsigned char i, unsigned char j, StorageType new_value)
         {
             const auto mask = Mask(i, j);
             // delete what's in place
@@ -55,12 +60,12 @@ public:
             bitfield = 0;
         }
     protected:
-        FlagStorageType bitfield;
+        StorageType bitfield;
     };
 
-    std::vector<FlagStorageType> GetValues(const State& s)const
+    std::vector<StorageType> GetValues(const State& s)const
     {
-        std::vector<FlagStorageType> result;
+        std::vector<StorageType> result;
         for (size_t i = 0; i + 1 < offsets.size(); ++i)
         {
             result.push_back(s.Get(offsets[i], offsets[i + 1]));
@@ -207,18 +212,13 @@ public:
         }
         for (const auto& flag : flag_map)
         {
-            if (flag.second.size() + 1 > std::numeric_limits<UCharType>::max())
-            {
-                throw MyError("The diacritic flag \"", flag.first, "\" has ", flag.second.size() + 1, " possible values, "
-                    "which is more than what a single input character can hold!");
-            }
             const unsigned char required_flag_bits = IntLog2<unsigned char, size_t>(2 * (flag.second.size() + 1));
             offsets.emplace_back(bits);
             bits += required_flag_bits;
         }
-        if (bits > sizeof(State) * CHAR_BIT)
+        if (bits > sizeof(StorageType) * CHAR_BIT)
             throw MyError("Storing the state of the flag diacritics requires ", bits,
-                " bits, but FlagDiacritics::State is only ", sizeof(State) * CHAR_BIT, " bits wide!");
+                " bits, but FlagDiacritics::State is only ", sizeof(StorageType) * CHAR_BIT, " bits wide!");
         offsets.emplace_back(bits);
     }
 private:

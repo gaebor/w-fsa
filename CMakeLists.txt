@@ -20,6 +20,7 @@ set (incdir ${PROJECT_SOURCE_DIR}/inc)
 
 add_executable(attol ${srcdir}/attol.cpp ${incdir}/ArgParser.h
 					 ${srcdir}/char.cpp ${incdir}/atto/char.h
+					 ${incdir}/atto/Record.h
                      ${srcdir}/Utils.cpp ${incdir}/Utils.h
                      ${srcdir}/Isatty.cpp ${incdir}/Isatty.h
                      ${incdir}/atto/FlagDiacritics.h

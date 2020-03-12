@@ -3,11 +3,14 @@
 #include <vector>
 #include <istream>
 #include <functional>
+#include <array>
+#include <tuple>
 #include <stdio.h>
 
 #include "atto/FlagDiacritics.h"
 #include "atto/char.h"
 #include "Utils.h"
+#include "atto/Record.h"
 
 namespace atto {
 
@@ -20,6 +23,23 @@ typedef ATTOL_NUMBER TransducerIndex;
 
 class Transducer
 {
+private:
+    struct ToPointers : std::array<TransducerIndex, 2>
+    {
+        ToPointers() { fill(0); }
+    };
+
+    std::vector<TransducerIndex> transitions_table;
+    ToPointers start_state;
+    size_t n_transitions, n_states;
+    size_t n_results;
+    
+    FlagDiacritics<> fd_table;
+    typedef typename decltype(fd_table)::State FlagState;
+public:
+    typedef std::vector<std::tuple<TransducerIndex, float, FlagState, const char*, const char*>> Path;
+private:
+    Transducer::Path path;
 public:
     Transducer();
     Transducer(std::istream& is);
@@ -32,7 +52,6 @@ public:
     size_t GetNumberOfStates()const;
     size_t GetAllocatedMemory()const;
 
-    typedef std::vector<TransducerIndex> Path;
     typedef std::function<void(const Path&)> ResultHandler;
 
     size_t max_results;
@@ -49,40 +68,35 @@ public:
 
     void Lookup(const char* s, FlagStrategy strategy = FlagStrategy::OBEY);
 private:
-    std::vector<TransducerIndex> transitions_table;
-    TransducerIndex start_state_start, start_state_end;
-    size_t n_transitions, n_states;
-    
     template<FlagStrategy strategy>
     void lookup(const char* s, TransducerIndex beg, const TransducerIndex end)
     {
         if ((max_results == 0 || n_results < max_results) &&
             (max_depth == 0 || path.size() < max_depth) &&
             (time_limit == 0 || myclock.Tock() < time_limit))
-            for (; beg < end; ++beg)
+        {
+            for (RecordIterator<> i(transitions_table.data() + beg); i < transitions_table.data() + end; ++i)
             {   // try outgoing edges
-                const auto id = transitions_table[beg];
-                const auto to_beg = transitions_table[beg + 1];
-                const auto to_end = transitions_table[beg + 2];
-                const auto input = reinterpret_cast<const char*>(transitions_table.data() + beg + 3);
+                const auto input = i.GetInput();
+                auto current_flag_state = path.empty() ? FlagState() : std::get<2>(path.back());
 
-                if (to_end == std::numeric_limits<TransducerIndex>::max() ||
-                    to_beg == std::numeric_limits<TransducerIndex>::max())
+                if (i.GetTo() == std::numeric_limits<TransducerIndex>::max() ||
+                    i.GetFrom() == std::numeric_limits<TransducerIndex>::max())
                 {   //final state
                     if (*s == '\0' && (strategy != NEGATIVE || flag_failed))
                     {   // that's a result
                         ++n_results;
-                        path.emplace_back(id);
+                        path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, input, i.GetOutput());
                         (*resulthandler)(path);
                         path.pop_back();
                     }
                 }
-                else if (StrEqual<Encoding::UTF8>(input, "@_UNKNOWN_SYMBOL_@") || 
-                         StrEqual<Encoding::UTF8>(input, "@_IDENTITY_SYMBOL_@"))
+                else if (StrEqual<Encoding::UTF8>(input, "@_UNKNOWN_SYMBOL_@") ||
+                    StrEqual<Encoding::UTF8>(input, "@_IDENTITY_SYMBOL_@"))
                 {   // consume one character
                     // TODO this can be hastened if the special symbols are shorter!
-                    path.emplace_back(id);
-                    lookup<strategy>(GetNextCharacter<Encoding::UTF8>(s), to_beg, to_end);
+                    path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, input, i.GetOutput());
+                    lookup<strategy>(GetNextCharacter<Encoding::UTF8>(s), i.GetFrom(), i.GetTo());
                 }
                 // 
                 // epsilon is handled with a simple empty string
@@ -91,48 +105,37 @@ private:
                 {
                     if (strategy == IGNORE)
                     {   // go with it, no matter what
-                        path.emplace_back(id);
-                        lookup<strategy>(s, to_beg, to_end);
-                    }else
+                        path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, i.GetOutput(), i.GetOutput());
+                        lookup<strategy>(s, i.GetFrom(), i.GetTo());
+                    }
+                    else
                     {
-                        const auto flagsate = fd_state;
-                        if (fd_table.Apply(input, fd_state))
+                        if (fd_table.Apply(input, current_flag_state))
                         {
-                            path.emplace_back(id);
-                            lookup<strategy>(s, to_beg, to_end);
+                            path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, i.GetOutput(), i.GetOutput());
+                            lookup<strategy>(s, i.GetFrom(), i.GetTo());
                         }
                         else if (strategy == NEGATIVE)
                         {
                             const bool previous_fail = flag_failed;
                             flag_failed = true;
-                            path.emplace_back(id);
-                            lookup<strategy>(s, to_beg, to_end);
+                            path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, i.GetOutput(), i.GetOutput());
+                            lookup<strategy>(s, i.GetFrom(), i.GetTo());
                             flag_failed = previous_fail;
-                        }                            
-                        fd_state = flagsate;
+                        }
                     }
                 }
                 else if (const char* next = StrPrefix<Encoding::UTF8>(s, input))
                 {   // a lead to follow
-                    path.emplace_back(id);
-                    lookup<strategy>(next, to_beg, to_end);
-                }
-
-                beg += 3;
-                while (!StrEnds<UTF8>(transitions_table[beg]))
-                {
-                    ++beg;
+                    path.emplace_back(i.GetId(), i.GetWeight(), current_flag_state, input, i.GetOutput());
+                    lookup<strategy>(next, i.GetFrom(), i.GetTo());
                 }
             }
-
+        }
         if (!path.empty())
             path.pop_back();
     }
-
-    size_t n_results;
-    Transducer::Path path;
-    FlagDiacritics<>::State fd_state;
-    FlagDiacritics<> fd_table;
+private:
     ::Clock<> myclock;
     bool flag_failed;
 };
