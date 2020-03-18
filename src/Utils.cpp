@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <vector>
 
-// #include "mkl_dss.h"
+#include "mkl_dss.h"
 #define _USE_MATH_DEFINES 
 #include <math.h>
 
@@ -130,102 +130,92 @@ bool ReadContent(FILE * input, std::vector<char>& content)
     return true;
 }
 
-//void PrintCooMtx(std::ostream& os,
-//    const std::vector<double>& data,
-//    const std::vector<MKL_INT>& rows,
-//    const std::vector<MKL_INT>& cols)
-//{
-//    os.setf(std::ios::fixed);
-//
-//    const auto max_row = (*std::max_element(rows.begin(), rows.end())) + 1;
-//    const auto oldprec = os.precision(4);
-//    for (MKL_INT r = 0; r < max_row; ++r)
-//    {
-//        for (MKL_INT i = cols.size()-1; i >= 0; --i)
-//            if (rows[i] == r)
-//            {
-//                os << '\r';
-//                for (MKL_INT j = 0; j < cols[i]; ++j) os << "       ";
-//                os << data[i];
-//            }
-//        os << '\n';
-//    }
-//    os.precision(oldprec);
-//    os.unsetf(std::ios::fixed);
-//}
-//
-//void PrintCsrMtx(FILE* f, const std::vector<double>& data,
-//    const std::vector<MKL_INT>& rows, const std::vector<MKL_INT>& cols,
-//    const std::vector<double>& rhs)
-//{
-//    const MKL_INT width = rows.size() - 1;
-//    MKL_INT prev;
-//    for (size_t i = 0; i < rows.size()-1; ++i)
-//    {
-//        prev = -1;
-//        for (MKL_INT j = rows[i]; j < rows[i + 1]; ++j)
-//        {
-//            for (; prev < cols[j]-1; ++prev) fputs("        ", f);
-//            
-//            prev = cols[j];
-//            PrintFixedWidth(f, data[j], 7);
-//            fputs(" ", f);
-//        }
-//        if (rhs.size() > i)
-//        {
-//            for (; prev < width -1 ; ++prev) fputs("        ", f);
-//            fputs("|", f);
-//            PrintFixedWidth(f, rhs[i], 7);
-//        }
-//        fputs("\n", f);
-//    }
-//}
-//
-//void ReadCsrMtx(std::istream & is, std::vector<double>& data, std::vector<MKL_INT>& rows, std::vector<MKL_INT>& cols)
-//{
-//    data.clear(); rows.clear(); cols.clear();
-//    std::string line;
-//    while (std::getline(is, line))
-//    {
-//        rows.push_back(cols.size());
-//        std::istringstream iss(line);
-//        do
-//        {
-//            cols.emplace_back();
-//            data.emplace_back();
-//            iss >> cols.back() >> data.back();
-//        } while (iss);
-//        cols.pop_back();
-//        data.pop_back();
-//    }
-//    rows.push_back(cols.size());
-//}
-//
-//void WriteCsrMtx(std::ostream & os, const std::vector<double>& data, const std::vector<MKL_INT>& rows, const std::vector<MKL_INT>& cols)
-//{
-//    for (size_t rowi = 0; rowi < rows.size() - 1; ++rowi)
-//    {
-//        for (MKL_INT colj = rows[rowi]; colj < rows[rowi + 1]; ++colj)
-//        {
-//            os << cols[colj] << ' ' << data[colj] << ' ';
-//        }
-//        os << '\n';
-//    }
-//}
+void PrintCooMtx(std::ostream& os,
+    const std::vector<double>& data,
+    const std::vector<MKL_INT>& rows,
+    const std::vector<MKL_INT>& cols)
+{
+    os.setf(std::ios::fixed);
+
+    const auto max_row = (*std::max_element(rows.begin(), rows.end())) + 1;
+    const auto oldprec = os.precision(4);
+    for (MKL_INT r = 0; r < max_row; ++r)
+    {
+        for (MKL_INT i = cols.size()-1; i >= 0; --i)
+            if (rows[i] == r)
+            {
+                os << '\r';
+                for (MKL_INT j = 0; j < cols[i]; ++j) os << "       ";
+                os << data[i];
+            }
+        os << '\n';
+    }
+    os.precision(oldprec);
+    os.unsetf(std::ios::fixed);
+}
+
+void PrintCsrMtx(FILE* f, const std::vector<double>& data,
+    const std::vector<MKL_INT>& rows, const std::vector<MKL_INT>& cols,
+    const std::vector<double>& rhs)
+{
+    const MKL_INT width = rows.size() - 1;
+    MKL_INT prev;
+    for (size_t i = 0; i < rows.size()-1; ++i)
+    {
+        prev = -1;
+        for (MKL_INT j = rows[i]; j < rows[i + 1]; ++j)
+        {
+            for (; prev < cols[j]-1; ++prev) fputs("        ", f);
+            
+            prev = cols[j];
+            PrintFixedWidth(f, data[j], 7);
+            fputs(" ", f);
+        }
+        if (rhs.size() > i)
+        {
+            for (; prev < width -1 ; ++prev) fputs("        ", f);
+            fputs("|", f);
+            PrintFixedWidth(f, rhs[i], 7);
+        }
+        fputs("\n", f);
+    }
+}
+
+void ReadCsrMtx(std::istream & is, std::vector<double>& data, std::vector<MKL_INT>& rows, std::vector<MKL_INT>& cols)
+{
+    data.clear(); rows.clear(); cols.clear();
+    std::string line;
+    while (std::getline(is, line))
+    {
+        rows.push_back(cols.size());
+        std::istringstream iss(line);
+        do
+        {
+            cols.emplace_back();
+            data.emplace_back();
+            iss >> cols.back() >> data.back();
+        } while (iss);
+        cols.pop_back();
+        data.pop_back();
+    }
+    rows.push_back(cols.size());
+}
+
+void WriteCsrMtx(std::ostream & os, const std::vector<double>& data, const std::vector<MKL_INT>& rows, const std::vector<MKL_INT>& cols)
+{
+    for (size_t rowi = 0; rowi < rows.size() - 1; ++rowi)
+    {
+        for (MKL_INT colj = rows[rowi]; colj < rows[rowi + 1]; ++colj)
+        {
+            os << cols[colj] << ' ' << data[colj] << ' ';
+        }
+        os << '\n';
+    }
+}
 
 bool ContainsPrefix(const CStr& word, const CStr& prefix)
 {
     return strncmp(word, prefix, strlen(prefix)) == 0;
-}
-
-const char* ContainsPrefix2(const char* word, const char* prefix)
-{
-    while (*word == *prefix && *word != '\0')
-    {
-        ++word;
-        ++prefix;
-    }
-    return (*prefix == '\0') ? word : nullptr;
 }
 
 double LogSimplexVolume(size_t d)
@@ -248,7 +238,7 @@ double mxlogx(double x)
     else if (x == 0)
         return 0;
     else
-        return std::numeric_limits<decltype(x)>::infinity();
+        return atof("inf");
 }
 
 double LogFactorial(size_t d)
@@ -270,7 +260,7 @@ double LogFactorial(size_t d)
     }
 }
 
-const char* MyError::what() const throw()
+const char * MyError::what() const throw()
 {
     return msg.c_str();
 }
@@ -303,126 +293,126 @@ size_t StrHash::operator()(const CStr& s) const
     return result;
 }
 
-//double RealSymmetricLogDet(const MKL_INT* const Hrow, const MKL_INT n,
-//                       const MKL_INT* const Hcol, const MKL_INT nnz,
-//                       const double* const Hdata, bool reorder)
-//{
-//    if (n == nnz)
-//    {
-//        double result = 0;
-//        for (MKL_INT i = 0; i < n; ++i)
-//        {
-//            if (Hdata[i] > 0)
-//                result += std::log(Hdata[i]);
-//            else
-//                return atof("inf");
-//        }
-//        return result;
-//    }
-//    std::vector<MKL_INT> perm;
-//    MKL_INT solver_opt = MKL_DSS_ZERO_BASED_INDEXING +
-//        MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR +
-//        MKL_DSS_REFINEMENT_ON;
-//    
-//    MKL_INT error;
-//    DssSolverHandler solver(solver_opt);
-//    auto solver_handle = solver.GetHandler();
-//    
-//    solver_opt = MKL_DSS_SYMMETRIC;
-//    if ((error = dss_define_structure(solver_handle, solver_opt, Hrow, n, n, Hcol, nnz)) != MKL_DSS_SUCCESS)
-//    {
-//        throw MyError("Unable to define structure for RealSymmetricLogDet! Error code: ", error);
-//    }
-//    solver_opt = reorder ? MKL_DSS_GET_ORDER : MKL_DSS_MY_ORDER;
-//    perm.resize(n);
-//    if (!reorder)
-//    {   // stick to original order
-//        for (MKL_INT i = 0; i < n; ++i)
-//            perm[i] = i;
-//    }
-//    if ((error = dss_reorder(solver_handle, solver_opt, perm.data())) != MKL_DSS_SUCCESS)
-//    {
-//        throw MyError("Unable to find reorder for RealSymmetricLogDet! Error code: ", error);
-//    }
-//    solver_opt = MKL_DSS_INDEFINITE;
-//    if ((error = dss_factor_real(solver_handle, solver_opt, Hdata)) != MKL_DSS_SUCCESS)
-//    {
-//        throw MyError("Unable to factor for RealSymmetricLogDet! Error code: ", error);
-//    }
-//    solver_opt = MKL_DSS_DEFAULTS;
-//    double det[2];
-//    if ((error = dss_statistics(solver_handle, solver_opt, "Determinant", det)) != MKL_DSS_SUCCESS)
-//    {
-//        throw MyError("Unable to get determinant for RealSymmetricLogDet! Error code: ", error);
-//    }
-//    else
-//    {
-//        const double& det_pow = det[0], &det_base = det[1];
-//        if (det_base <= 0.0)
-//            return atof("inf");
-//        return std::log(det_base) + det_pow * M_LN10;
-//    }
-//}
-//
-//DssSolverHandler::DssSolverHandler(MKL_INT solver_opt)
-//    : solver_handler(NULL)
-//{
-//    MKL_INT error;
-//    if ((error = dss_create(solver_handler, solver_opt)) != MKL_DSS_SUCCESS)
-//    {
-//        throw MyError("Failed to create DSS! Error code: ", error);
-//    }
-//}
-//
-//DssSolverHandler::~DssSolverHandler()
-//{
-//    if (solver_handler)
-//    {
-//        MKL_INT solver_opt = MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR;
-//        dss_delete(solver_handler, solver_opt);
-//        //if (error != MKL_DSS_SUCCESS)
-//        //    throw MyError("Cannot delete solver! Error: ", error);
-//        solver_handler = 0;
-//    }
-//}
-//
-//_MKL_DSS_HANDLE_t DssSolverHandler::GetHandler() const
-//{
-//    return solver_handler;
-//}
-//
-//SparseMtxHandle::SparseMtxHandle()
-//{
-//    desc.type = SPARSE_MATRIX_TYPE_GENERAL;
-//}
-//
-//SparseMtxHandle::SparseMtxHandle(MKL_INT n, MKL_INT k, MKL_INT * rows, MKL_INT * cols, double * x)
-//{
-//    desc.type = SPARSE_MATRIX_TYPE_GENERAL;
-//    Init(n, k, rows, cols, x);
-//}
-//
-//void SparseMtxHandle::Init(MKL_INT n, MKL_INT k, MKL_INT * rows, MKL_INT * cols, double * x)
-//{
-//    auto status = mkl_sparse_d_create_csr(&A, SPARSE_INDEX_BASE_ZERO, n, k, rows, rows + 1, cols, x);
-//    if (SPARSE_STATUS_SUCCESS != status)
-//    {
-//        A = nullptr;
-//        throw MyError("mkl_sparse_d_create_csr failed with ", status);
-//    }
-//}
-//
-//SparseMtxHandle::~SparseMtxHandle()
-//{
-//    if (A)
-//        mkl_sparse_destroy(A);
-//}
-//
-//void SparseMtxHandle::dot(const double * x, double * y, sparse_operation_t op, double alpha, double beta) const
-//{
-//    auto status = mkl_sparse_d_mv(op, alpha, A, desc, x, beta, y);
-//    if (status != SPARSE_STATUS_SUCCESS)
-//    {
-//        throw MyError("mkl_sparse_d_mv failed with ", status);
-//    }
-//}
+double RealSymmetricLogDet(const MKL_INT* const Hrow, const MKL_INT n,
+                       const MKL_INT* const Hcol, const MKL_INT nnz,
+                       const double* const Hdata, bool reorder)
+{
+    if (n == nnz)
+    {
+        double result = 0;
+        for (MKL_INT i = 0; i < n; ++i)
+        {
+            if (Hdata[i] > 0)
+                result += std::log(Hdata[i]);
+            else
+                return atof("inf");
+        }
+        return result;
+    }
+    std::vector<MKL_INT> perm;
+    MKL_INT solver_opt = MKL_DSS_ZERO_BASED_INDEXING +
+        MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR +
+        MKL_DSS_REFINEMENT_ON;
+    
+    MKL_INT error;
+    DssSolverHandler solver(solver_opt);
+    auto solver_handle = solver.GetHandler();
+    
+    solver_opt = MKL_DSS_SYMMETRIC;
+    if ((error = dss_define_structure(solver_handle, solver_opt, Hrow, n, n, Hcol, nnz)) != MKL_DSS_SUCCESS)
+    {
+        throw MyError("Unable to define structure for RealSymmetricLogDet! Error code: ", error);
+    }
+    solver_opt = reorder ? MKL_DSS_GET_ORDER : MKL_DSS_MY_ORDER;
+    perm.resize(n);
+    if (!reorder)
+    {   // stick to original order
+        for (MKL_INT i = 0; i < n; ++i)
+            perm[i] = i;
+    }
+    if ((error = dss_reorder(solver_handle, solver_opt, perm.data())) != MKL_DSS_SUCCESS)
+    {
+        throw MyError("Unable to find reorder for RealSymmetricLogDet! Error code: ", error);
+    }
+    solver_opt = MKL_DSS_INDEFINITE;
+    if ((error = dss_factor_real(solver_handle, solver_opt, Hdata)) != MKL_DSS_SUCCESS)
+    {
+        throw MyError("Unable to factor for RealSymmetricLogDet! Error code: ", error);
+    }
+    solver_opt = MKL_DSS_DEFAULTS;
+    double det[2];
+    if ((error = dss_statistics(solver_handle, solver_opt, "Determinant", det)) != MKL_DSS_SUCCESS)
+    {
+        throw MyError("Unable to get determinant for RealSymmetricLogDet! Error code: ", error);
+    }
+    else
+    {
+        const double& det_pow = det[0], &det_base = det[1];
+        if (det_base <= 0.0)
+            return atof("inf");
+        return std::log(det_base) + det_pow * M_LN10;
+    }
+}
+
+DssSolverHandler::DssSolverHandler(MKL_INT solver_opt)
+    : solver_handler(NULL)
+{
+    MKL_INT error;
+    if ((error = dss_create(solver_handler, solver_opt)) != MKL_DSS_SUCCESS)
+    {
+        throw MyError("Failed to create DSS! Error code: ", error);
+    }
+}
+
+DssSolverHandler::~DssSolverHandler()
+{
+    if (solver_handler)
+    {
+        MKL_INT solver_opt = MKL_DSS_MSG_LVL_WARNING + MKL_DSS_TERM_LVL_ERROR;
+        dss_delete(solver_handler, solver_opt);
+        //if (error != MKL_DSS_SUCCESS)
+        //    throw MyError("Cannot delete solver! Error: ", error);
+        solver_handler = 0;
+    }
+}
+
+_MKL_DSS_HANDLE_t DssSolverHandler::GetHandler() const
+{
+    return solver_handler;
+}
+
+SparseMtxHandle::SparseMtxHandle()
+{
+    desc.type = SPARSE_MATRIX_TYPE_GENERAL;
+}
+
+SparseMtxHandle::SparseMtxHandle(MKL_INT n, MKL_INT k, MKL_INT * rows, MKL_INT * cols, double * x)
+{
+    desc.type = SPARSE_MATRIX_TYPE_GENERAL;
+    Init(n, k, rows, cols, x);
+}
+
+void SparseMtxHandle::Init(MKL_INT n, MKL_INT k, MKL_INT * rows, MKL_INT * cols, double * x)
+{
+    auto status = mkl_sparse_d_create_csr(&A, SPARSE_INDEX_BASE_ZERO, n, k, rows, rows + 1, cols, x);
+    if (SPARSE_STATUS_SUCCESS != status)
+    {
+        A = nullptr;
+        throw MyError("mkl_sparse_d_create_csr failed with ", status);
+    }
+}
+
+SparseMtxHandle::~SparseMtxHandle()
+{
+    if (A)
+        mkl_sparse_destroy(A);
+}
+
+void SparseMtxHandle::dot(const double * x, double * y, sparse_operation_t op, double alpha, double beta) const
+{
+    auto status = mkl_sparse_d_mv(op, alpha, A, desc, x, beta, y);
+    if (status != SPARSE_STATUS_SUCCESS)
+    {
+        throw MyError("mkl_sparse_d_mv failed with ", status);
+    }
+}
